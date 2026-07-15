@@ -4,6 +4,7 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  testIgnore: "**/*.recorded.spec.ts",
   outputDir: "test-results",
   timeout: 45_000,
   expect: { timeout: 8_000 },
@@ -31,7 +32,13 @@ export default defineConfig({
     ? undefined
     : {
         command: "npm run start -- --hostname 127.0.0.1 --port 3000",
-        url: baseURL,
+        // Local smoke runs may opt into the isolated in-process store. CI's
+        // browser-live job supplies DATABASE_URL and must fail closed if that
+        // durable store becomes unavailable instead of silently falling back.
+        env: {
+          COMMONSTATE_TEST_MEMORY: process.env.DATABASE_URL ? "0" : "1",
+        },
+        url: `${baseURL}/api/demo/state?workspace=playwright-readiness`,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
       },

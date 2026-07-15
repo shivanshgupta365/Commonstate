@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { describe, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 
 import {
   baselineChanges,
@@ -10,9 +10,10 @@ import {
   slackProposal,
 } from "../components/console/demoData.ts";
 import { createSeedState } from "../lib/commonstate/domain.ts";
+import { startNativeNextServer } from "./helpers/native-next-server.mjs";
+import { ROUTE_CONTRACTS } from "./route-contracts.mjs";
 
 const projectRoot = new URL("../", import.meta.url);
-const workerUrl = new URL("../dist/server/index.js", import.meta.url);
 const developmentPreviewMeta =
   /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
 const starterCopy =
@@ -75,73 +76,23 @@ const acceptanceGroups = [
   },
 ];
 
-let workerPromise;
 let primaryRoutesPromise;
+let nativeServer;
 const seededStatePromise = createSeedState("rendered-validation");
 
-function createD1Stub() {
-  const statement = {
-    bind() {
-      return this;
-    },
-    async first() {
-      return null;
-    },
-    async all() {
-      return { success: true, results: [], meta: {} };
-    },
-    async raw() {
-      return [];
-    },
-    async run() {
-      return { success: true, results: [], meta: { changes: 1 } };
-    },
-  };
+before(async () => {
+  nativeServer = await startNativeNextServer();
+});
 
-  return {
-    prepare() {
-      return statement;
-    },
-    async batch(statements) {
-      return statements.map(() => ({ success: true, results: [], meta: {} }));
-    },
-    async exec() {
-      return { count: 0, duration: 0 };
-    },
-    async dump() {
-      return new ArrayBuffer(0);
-    },
-  };
-}
+after(async () => {
+  await nativeServer?.stop();
+});
 
-async function getWorker() {
-  workerPromise ??= import(`${workerUrl.href}?validation=${process.pid}-${Date.now()}`).then(
-    ({ default: worker }) => worker,
-  );
-  return workerPromise;
-}
-
-function workerEnv({ d1 = false } = {}) {
-  return {
-    ASSETS: {
-      fetch: async () => new Response("Not found", { status: 404 }),
-    },
-    ...(d1 ? { DB: createD1Stub() } : {}),
-  };
-}
-
-const executionContext = {
-  waitUntil() {},
-  passThroughOnException() {},
-};
-
-async function workerFetch(path, { d1 = false, headers, ...requestInit } = {}) {
-  const worker = await getWorker();
-  const request = new Request(new URL(path, "http://commonstate.test"), {
+async function nativeFetch(path, { headers, ...requestInit } = {}) {
+  return fetch(new URL(path, nativeServer.origin), {
     headers: { accept: "text/html", ...headers },
     ...requestInit,
   });
-  return worker.fetch(request, workerEnv({ d1 }), executionContext);
 }
 
 function decodeEntities(value) {
@@ -172,7 +123,7 @@ function visibleText(html) {
 }
 
 async function renderRoute(path, options) {
-  const response = await workerFetch(path, options);
+  const response = await nativeFetch(path, options);
   const html = await response.text();
   return {
     status: response.status,
@@ -185,7 +136,7 @@ async function renderRoute(path, options) {
 function primaryRoutes() {
   primaryRoutesPromise ??= Promise.all([
     renderRoute("/"),
-    renderRoute("/tano", { d1: true }),
+    renderRoute("/tano"),
   ]).then(([root, tano]) => ({ root, tano }));
   return primaryRoutesPromise;
 }
@@ -208,10 +159,10 @@ test("server-renders the Commonstate landing page and product thesis", async () 
   assertHtmlResponse(root);
   assert.match(
     root.html,
-    /<title>Commonstate — Every human\. Every agent\. Same state\. · Commonstate<\/title>/,
+    /<title>Commonstate — Every human\. Every agent\. Same state\.<\/title>/,
   );
   assert.match(root.html, /<main\b/i);
-  assert.match(root.html, /href="\/tano"/);
+  assert.match(root.html, /href="(?:\/|\.\/)tano\/?"/);
 
   assertVisibleCopy(root.text, [
     "Operational context control plane",
@@ -279,22 +230,49 @@ test("built routes contain no active starter preview metadata or copy", async ()
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });
 
-test("demo state remains deterministic with a D1 stub or no DB binding", async () => {
-  for (const d1 of [false, true]) {
-    const workspace = `rendered-api-${d1 ? "stub" : "memory"}-${process.pid}`;
-    const response = await workerFetch(
-      `/api/demo/state?workspace=${workspace}`,
-      { d1, headers: { accept: "application/json" } },
-    );
-    assert.equal(response.status, 200);
+test("native API state remains deterministic with durable or in-memory storage", async () => {
+  const workspace = `rendered-api-${process.pid}`;
+  const response = await nativeFetch(
+    `/api/demo/state?workspace=${workspace}`,
+    { headers: { accept: "application/json" } },
+  );
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^application\/json\b/i);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.state.meta.deterministic, true);
+  assert.equal(body.state.meta.workspaceId, workspace);
+  const expectedMode = process.env.COMMONSTATE_EXPECT_STORAGE_MODE;
+  if (expectedMode) assert.equal(body.state.meta.mode, expectedMode);
+  else assert.ok(["postgres", "memory-local"].includes(body.state.meta.mode));
+  assert.equal(body.state.evals.passed, 24);
+  assert.equal(body.state.evals.total, 24);
+});
+
+test("native Next mounts all 22 declared routes with their intended methods", async () => {
+  assert.equal(ROUTE_CONTRACTS.length, 22);
+  for (const [index, contract] of ROUTE_CONTRACTS.entries()) {
+    const workspace = `http-matrix-${index}-${process.pid}`;
+    const request = {
+      method: contract.method,
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "x-commonstate-workspace": workspace,
+      },
+      ...(contract.method === "POST" ? { body: JSON.stringify(contract.body ?? {}) } : {}),
+    };
+    const response = await nativeFetch(contract.path, request);
+    assert.equal(response.status, 200, `${contract.method} ${contract.path}`);
     assert.match(response.headers.get("content-type") ?? "", /^application\/json\b/i);
-    const body = await response.json();
-    assert.equal(body.ok, true);
-    assert.equal(body.state.meta.deterministic, true);
-    assert.equal(body.state.meta.workspaceId, workspace);
-    assert.ok(["d1", "memory-fallback"].includes(body.state.meta.mode));
-    assert.equal(body.state.evals.passed, 24);
-    assert.equal(body.state.evals.total, 24);
+
+    const wrongMethod = contract.method === "GET" ? "POST" : "GET";
+    const rejected = await nativeFetch(contract.path, {
+      method: wrongMethod,
+      headers: { accept: "application/json" },
+      ...(wrongMethod === "POST" ? { body: "{}" } : {}),
+    });
+    assert.equal(rejected.status, 405, `${wrongMethod} ${contract.path}`);
   }
 });
 

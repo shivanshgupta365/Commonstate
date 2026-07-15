@@ -298,6 +298,15 @@
 .commandButton:hover,
 .iconButton:hover { transform: translateY(-1px); box-shadow: 0 3px 0 rgba(10, 10, 10, 0.09); }
 
+.modeButton:disabled {
+  cursor: default;
+  color: #4e4780;
+  background: #f0edff;
+  border-color: rgba(115, 87, 255, 0.35);
+}
+
+.modeButton:disabled:hover { transform: none; box-shadow: none; }
+
 .modeButton {
   padding: 0 11px;
   display: flex;
@@ -700,6 +709,31 @@
 .toast{position:fixed;z-index:150;left:50%;bottom:22px;max-width:min(560px,calc(100vw - 30px));min-height:42px;padding:10px 15px;color:white;background:#17151a;border:1px solid rgba(255,255,255,.2);border-radius:8px;box-shadow:4px 4px 0 var(--cs-violet);display:flex;align-items:center;gap:9px;font-size:9px;opacity:0;pointer-events:none;transform:translate(-50%,20px);transition:opacity 180ms ease,transform 180ms ease}.toastVisible{opacity:1;transform:translate(-50%,0)}.toast>span{width:21px;height:21px;flex:0 0 21px;background:var(--cs-mint);color:var(--cs-ink);border-radius:50%;display:grid;place-items:center;font-size:9px}
 .toastError{background:#351310;border-color:rgba(255,122,102,.7);box-shadow:4px 4px 0 var(--cs-coral)}.toastError>span{background:var(--cs-coral)}
 .spinner{width:13px;height:13px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+
+/* Preserve the console palette while keeping every compact label WCAG AA.
+   These are deliberately scoped text corrections; no spacing, layout, motion,
+   or surface colors change. */
+.console .railFooter p { color: #8f8a92; }
+.console .sourceChip small,
+.console .agentChip small,
+.console .listToolbar > span,
+.console .changeRowMeta > small,
+.console .changeRowBody > small,
+.console .quoteHeader > div > small,
+.console .diffRow small,
+.console .inspectorClaim small,
+.console .resolvedBar > span:nth-child(2),
+.console .inspectorStats > div > span,
+.console .agentCardActive .agentIdentity p,
+.console .agentCardActive dl dt,
+.console .replayColumnHeader p,
+.console .contextFact > span:first-child,
+.console .decisionResult > small,
+.console .evalTableHeader > span { color: #625c54; }
+.console .node_ink > strong { color: var(--cs-white); }
+.console .inspectorFooter > span,
+.console .replayDelta > span,
+.console .evalVitals > div > span { color: #aaa6ad; }
 
 @keyframes statusPulse{50%{opacity:.45;transform:scale(.82)}}
 @keyframes enginePulse{0%{opacity:.85;transform:scale(.96)}100%{opacity:0;transform:scale(1.07)}}

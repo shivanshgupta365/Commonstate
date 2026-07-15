@@ -294,7 +294,7 @@ export type EvaluationRecord = {
 };
 
 export type StorageMeta = {
-  mode: "d1" | "memory-fallback";
+  mode: "postgres" | "memory-local";
   deterministic: true;
   notice: string | null;
 };

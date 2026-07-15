@@ -882,7 +882,7 @@
 .comparisonTable tr > *:last-child { border-right: 0; }
 .comparisonTable thead th { color: #5b5750; background: #ece6da; font-family: var(--font-geist-mono), monospace; font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase; }
 .comparisonTable thead th:first-child { width: 21%; }
-.comparisonTable thead th:last-child { color: var(--ink); background: var(--violet); }
+.comparisonTable thead th:last-child { color: var(--white); background: var(--violet); }
 .comparisonTable tbody th { color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: 9px; font-weight: 600; text-transform: uppercase; }
 .comparisonTable tbody td { font-size: 13px; }
 .comparisonTable tbody td:nth-child(2) { color: var(--muted); text-decoration-color: var(--coral); }

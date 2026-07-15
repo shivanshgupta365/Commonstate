@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { headers } from "next/headers";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,54 +15,54 @@ const geistMono = Geist_Mono({
 const description =
   "The operational context control plane that versions every decision, compiles the right context, and explains every agent action.";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host =
-    requestHeaders.get("x-forwarded-host") ??
-    requestHeaders.get("host") ??
-    "localhost:3000";
-  const isLocalHost = /^(localhost|127\.0\.0\.1|\[::1\])(?::|$)/i.test(host);
-  const protocol =
-    requestHeaders.get("x-forwarded-proto") ??
-    (isLocalHost ? "http" : "https");
-  const metadataBase = new URL(`${protocol}://${host}`);
+const vercelHost =
+  process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (vercelHost ? `https://${vercelHost}` : "http://localhost:3000");
 
-  return {
-    metadataBase,
-    title: {
-      default: "Commonstate — Every human. Every agent. Same state.",
-      template: "%s · Commonstate",
-    },
+export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "Commonstate — Every human. Every agent. Same state.",
+    template: "%s · Commonstate",
+  },
+  description,
+  applicationName: "Commonstate",
+  keywords: [
+    "agent memory",
+    "operational context",
+    "company brain",
+    "AI agents",
+    "human in the loop",
+  ],
+  creator: "Commonstate",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    shortcut: "/favicon.svg",
+  },
+  robots: { index: true, follow: true },
+  openGraph: {
+    title: "Commonstate — Every human. Every agent. Same state.",
     description,
-    applicationName: "Commonstate",
-    keywords: [
-      "agent memory",
-      "operational context",
-      "company brain",
-      "AI agents",
-      "human in the loop",
+    type: "website",
+    url: siteUrl,
+    images: [
+      {
+        url: "/og.png",
+        width: 1728,
+        height: 910,
+        alt: "Commonstate — Every human. Every agent. Same state.",
+      },
     ],
-    creator: "Commonstate",
-    icons: {
-      icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
-      shortcut: "/favicon.svg",
-    },
-    robots: { index: true, follow: true },
-    openGraph: {
-      title: "Commonstate — Every human. Every agent. Same state.",
-      description,
-      type: "website",
-      url: metadataBase,
-      images: [{ url: "/og.png", width: 1728, height: 910, alt: "Commonstate — Every human. Every agent. Same state." }],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: "Commonstate — Every human. Every agent. Same state.",
-      description,
-      images: ["/og.png"],
-    },
-  };
-}
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Commonstate — Every human. Every agent. Same state.",
+    description,
+    images: ["/og.png"],
+  },
+};
 
 export const viewport: Viewport = {
   width: "device-width",

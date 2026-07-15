@@ -26,10 +26,16 @@ Sources -> Evidence ledger -> Truth engine -> Context compiler
 
 ## Shipped vertical slice
 
-- Next.js/Vinext UI and API routes with Cloudflare Worker-compatible output.
-- Drizzle schema and generated migration for 17 normalized D1 tables.
-- D1 persistence when the binding and migration are present; isolated memory
-  fallback otherwise, reported through `state.meta.mode`.
+- Native Next.js 16 App Router UI and route handlers, built with `next build`
+  and served with `next start` on Node 22.
+- Drizzle `pg-core` schema and generated migration for 17 normalized Supabase
+  Postgres tables, using JSONB, native booleans, timezone-aware timestamps,
+  foreign keys, uniqueness constraints, and workspace indexes.
+- PostgreSQL persistence through Supabase's transaction pooler with prepared
+  statements disabled. `DATABASE_URL` serves application traffic;
+  `MIGRATION_DATABASE_URL` is reserved for schema changes.
+- Isolated memory persistence only in local development and tests, reported as
+  `state.meta.mode: "memory-local"`. Durable operation reports `"postgres"`.
 - Anonymous production workspaces derived from a random 256-bit `HttpOnly`,
   `Secure`, `SameSite=Lax` cookie. Caller workspace selectors work only on
   explicit local/test hosts.
@@ -37,7 +43,9 @@ Sources -> Evidence ledger -> Truth engine -> Context compiler
   replays, outcomes, and evals. Failed commands do not advance UI state.
 - A deterministic provider keeps the public proof reproducible and honestly
   reports zero model tokens and cost.
-- MCP-shaped JSON-RPC tools over POST for the shared agent contract.
+- JSON-RPC 2.0 MCP tools over POST for the shared agent contract.
+- A provider-neutral `DemoClient` chooses a fresh API or a checked-in,
+  deterministic recording without changing the console UI.
 
 The anonymous cookie is an isolation mechanism for the public demonstration,
 not a substitute for enterprise authentication. The production path replaces
@@ -45,20 +53,57 @@ it with user and agent service identities.
 
 ## Persistence and consistency
 
-The repository applies an optimistic workspace version to reject concurrent
-stale saves. IDs and every query are workspace-scoped. Source events, claims,
+Every workspace mutation runs in one database transaction. The workspace row is
+updated with an optimistic version compare-and-swap before dependent records
+are persisted. A stale writer returns `409 CONCURRENT_UPDATE`, and the failed
+transaction leaves no partial sources, claims, conflicts, or events.
+
+IDs and every collection query are workspace-scoped. Collection reads have
+deterministic ordering so seed hashes, context versions, receipts, and replay
+remain reproducible after a database round trip. Source events, claims,
 approvals, context evidence, runs, and outcomes are append-oriented; mutable
 lifecycle projections retain supersession history.
 
-Demo reset is intentionally destructive inside the current browser workspace.
-Production would use transactional Postgres writes, durable audit retention,
-deletion propagation, and recovery tooling. This repository validates the D1
-migration and Worker build but does not claim a live D1 integration run in CI.
+Opening a workspace has a provider-neutral 1.25-second storage deadline. A
+missing connection, failed query, timeout, or failed write returns HTTP `503`
+with error code `STORAGE_UNAVAILABLE` in production. Production never switches
+to process memory. Demo reset is intentionally destructive only inside the
+current browser workspace and runs transactionally.
 
-## Production path
+## Recorded fallback
 
-The API boundary maps to NestJS without changing product contracts. D1 records
-map to Postgres/Supabase and JSONB; pgvector and lexical ranking can sit behind
-the deterministic filters. LangGraph owns long-running agent state, Gemini
-structured outputs sit behind the provider interface, and authenticated
-Streamable HTTP MCP exposes the same tools to scoped agent identities.
+```text
+Console -> DemoClient -> fresh API -> Supabase Postgres
+                    \-> versioned recording -> pure deterministic state machine
+```
+
+`ApiDemoClient` first requests `/api/demo/state` with a bounded browser timeout.
+Only a network failure, timeout, or storage `503` selects
+`RecordedDemoClient`; validation, permission, and domain errors remain visible.
+Once selected, the mode is pinned for the current console session. A failure
+after a successful live mutation offers retry/reset instead of silently changing
+the source of truth.
+
+`/tano?demo=recorded` is the explicit zero-live-API entry point. It loads the
+static versioned fixture directly; the same route is offered as an intentional
+reset after a recoverable live mutation failure.
+
+The checked-in recording supports the complete ask, ingest, approve/reject,
+agent, replay, outcome, and reset workflow without live API calls. It declares
+its accepted question and workflow inputs; anything else returns an explicit
+“not included in this recording” response. The fixture generator invokes pure
+domain functions, not a deployed server, and records schema, generator, fixture
+hash, and 24/24 eval metadata.
+
+## API boundary
+
+The canonical `/api/*` family and browser-oriented `/api/demo/*` family expose
+the same 11 operations: state, reset, ask, ingest, update, approve, reject,
+run-agent, replay, outcome, and MCP. This is a 22-path contract. `update` remains
+an alias of `ingest`; both families preserve envelopes, errors, status codes,
+64KB request limits, and `Cache-Control: no-store`.
+
+The deployment target is Vercel, but the runtime has no host-specific adapter
+and can run on any Node 22 platform. Future authenticated connectors, hybrid
+vector/lexical retrieval, long-running graphs, and model providers can sit
+behind the existing deterministic domain and MCP boundaries.

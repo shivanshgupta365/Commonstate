@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { tryGetDb, type CommonstateDb } from "../../db";
 import {
   actors,
@@ -27,6 +27,9 @@ import {
   type DomainState,
   type StorageMeta,
 } from "./domain";
+import { withDeadline } from "./deadline";
+
+export const WORKSPACE_OPEN_DEADLINE_MS = 1_250;
 
 type DomainStore = {
   load(workspaceId: string): Promise<DomainState | null>;
@@ -49,8 +52,43 @@ function castRows<T>(value: unknown): T {
   return value as T;
 }
 
-class D1DomainStore implements DomainStore {
-  constructor(private readonly db: CommonstateDb) {}
+const temporalColumns = [
+  "createdAt",
+  "updatedAt",
+  "capturedAt",
+  "observedAt",
+  "validFrom",
+  "validTo",
+  "detectedAt",
+  "resolvedAt",
+  "asOf",
+  "invalidatedAt",
+  "startedAt",
+  "completedAt",
+  "runAt",
+] as const;
+
+function normalizeTemporalRecord<T>(value: T): T {
+  const result = { ...(value as Record<string, unknown>) };
+  for (const column of temporalColumns) {
+    const timestamp = result[column];
+    if (typeof timestamp === "string") result[column] = new Date(timestamp).toISOString();
+  }
+  return result as T;
+}
+
+function normalizeRows<T>(value: unknown): T {
+  return (value as Array<Record<string, unknown>>).map(normalizeTemporalRecord) as T;
+}
+
+type TransactionDb = Parameters<Parameters<CommonstateDb["transaction"]>[0]>[0];
+
+class PostgresDomainStore implements DomainStore {
+  private readonly db: CommonstateDb;
+
+  constructor(db: CommonstateDb) {
+    this.db = db;
+  }
 
   async load(workspaceId: string): Promise<DomainState | null> {
     const [workspace] = await this.db
@@ -78,218 +116,309 @@ class D1DomainStore implements DomainStore {
       outcomeRows,
       evaluationRows,
     ] = await Promise.all([
-      this.db.select().from(scopes).where(eq(scopes.workspaceId, workspaceId)),
-      this.db.select().from(actors).where(eq(actors.workspaceId, workspaceId)),
-      this.db.select().from(sources).where(eq(sources.workspaceId, workspaceId)),
-      this.db.select().from(sourceEvents).where(eq(sourceEvents.workspaceId, workspaceId)),
-      this.db.select().from(entities).where(eq(entities.workspaceId, workspaceId)),
-      this.db.select().from(relationships).where(eq(relationships.workspaceId, workspaceId)),
-      this.db.select().from(claims).where(eq(claims.workspaceId, workspaceId)),
-      this.db.select().from(memoryEvents).where(eq(memoryEvents.workspaceId, workspaceId)),
-      this.db.select().from(conflicts).where(eq(conflicts.workspaceId, workspaceId)),
-      this.db.select().from(approvals).where(eq(approvals.workspaceId, workspaceId)),
-      this.db.select().from(contextPacks).where(eq(contextPacks.workspaceId, workspaceId)),
+      this.db
+        .select()
+        .from(scopes)
+        .where(eq(scopes.workspaceId, workspaceId))
+        .orderBy(asc(scopes.createdAt), asc(scopes.id)),
+      this.db
+        .select()
+        .from(actors)
+        .where(eq(actors.workspaceId, workspaceId))
+        .orderBy(asc(actors.createdAt), asc(actors.id)),
+      this.db
+        .select()
+        .from(sources)
+        .where(eq(sources.workspaceId, workspaceId))
+        .orderBy(asc(sources.createdAt), asc(sources.id)),
+      this.db
+        .select()
+        .from(sourceEvents)
+        .where(eq(sourceEvents.workspaceId, workspaceId))
+        .orderBy(asc(sourceEvents.createdAt), asc(sourceEvents.id)),
+      this.db
+        .select()
+        .from(entities)
+        .where(eq(entities.workspaceId, workspaceId))
+        .orderBy(asc(entities.createdAt), asc(entities.id)),
+      this.db
+        .select()
+        .from(relationships)
+        .where(eq(relationships.workspaceId, workspaceId))
+        .orderBy(asc(relationships.createdAt), asc(relationships.id)),
+      this.db
+        .select()
+        .from(claims)
+        .where(eq(claims.workspaceId, workspaceId))
+        .orderBy(asc(claims.createdAt), asc(claims.id)),
+      this.db
+        .select()
+        .from(memoryEvents)
+        .where(eq(memoryEvents.workspaceId, workspaceId))
+        .orderBy(asc(memoryEvents.sequence), asc(memoryEvents.id)),
+      this.db
+        .select()
+        .from(conflicts)
+        .where(eq(conflicts.workspaceId, workspaceId))
+        .orderBy(asc(conflicts.createdAt), asc(conflicts.id)),
+      this.db
+        .select()
+        .from(approvals)
+        .where(eq(approvals.workspaceId, workspaceId))
+        .orderBy(asc(approvals.createdAt), asc(approvals.id)),
+      this.db
+        .select()
+        .from(contextPacks)
+        .where(eq(contextPacks.workspaceId, workspaceId))
+        .orderBy(asc(contextPacks.createdAt), asc(contextPacks.id)),
       this.db
         .select()
         .from(contextPackEvidence)
-        .where(eq(contextPackEvidence.workspaceId, workspaceId)),
-      this.db.select().from(agentRuns).where(eq(agentRuns.workspaceId, workspaceId)),
-      this.db.select().from(runEvents).where(eq(runEvents.workspaceId, workspaceId)),
-      this.db.select().from(outcomes).where(eq(outcomes.workspaceId, workspaceId)),
+        .where(eq(contextPackEvidence.workspaceId, workspaceId))
+        .orderBy(asc(contextPackEvidence.ordinal), asc(contextPackEvidence.id)),
+      this.db
+        .select()
+        .from(agentRuns)
+        .where(eq(agentRuns.workspaceId, workspaceId))
+        .orderBy(asc(agentRuns.createdAt), asc(agentRuns.id)),
+      this.db
+        .select()
+        .from(runEvents)
+        .where(eq(runEvents.workspaceId, workspaceId))
+        .orderBy(asc(runEvents.sequence), asc(runEvents.id)),
+      this.db
+        .select()
+        .from(outcomes)
+        .where(eq(outcomes.workspaceId, workspaceId))
+        .orderBy(asc(outcomes.createdAt), asc(outcomes.id)),
       this.db
         .select()
         .from(evaluationResults)
-        .where(eq(evaluationResults.workspaceId, workspaceId)),
+        .where(eq(evaluationResults.workspaceId, workspaceId))
+        .orderBy(
+          asc(evaluationResults.runAt),
+          asc(evaluationResults.category),
+          asc(evaluationResults.caseName),
+          asc(evaluationResults.id),
+        ),
     ]);
 
     return {
-      workspace,
-      scopes: castRows<DomainState["scopes"]>(scopeRows),
-      actors: castRows<DomainState["actors"]>(actorRows),
-      sources: castRows<DomainState["sources"]>(sourceRows),
-      sourceEvents: castRows<DomainState["sourceEvents"]>(sourceEventRows),
-      entities: castRows<DomainState["entities"]>(entityRows),
-      relationships: castRows<DomainState["relationships"]>(relationshipRows),
-      claims: castRows<DomainState["claims"]>(claimRows),
-      memoryEvents: castRows<DomainState["memoryEvents"]>(memoryEventRows).sort(
+      workspace: normalizeTemporalRecord(workspace),
+      scopes: normalizeRows<DomainState["scopes"]>(scopeRows),
+      actors: normalizeRows<DomainState["actors"]>(actorRows),
+      sources: normalizeRows<DomainState["sources"]>(sourceRows),
+      sourceEvents: normalizeRows<DomainState["sourceEvents"]>(sourceEventRows),
+      entities: normalizeRows<DomainState["entities"]>(entityRows),
+      relationships: normalizeRows<DomainState["relationships"]>(relationshipRows),
+      claims: normalizeRows<DomainState["claims"]>(claimRows),
+      memoryEvents: normalizeRows<DomainState["memoryEvents"]>(memoryEventRows).sort(
         (left, right) => left.sequence - right.sequence,
       ),
-      conflicts: castRows<DomainState["conflicts"]>(conflictRows),
-      approvals: castRows<DomainState["approvals"]>(approvalRows),
-      contextPacks: castRows<DomainState["contextPacks"]>(contextPackRows),
-      contextPackEvidence: castRows<DomainState["contextPackEvidence"]>(
+      conflicts: normalizeRows<DomainState["conflicts"]>(conflictRows),
+      approvals: normalizeRows<DomainState["approvals"]>(approvalRows),
+      contextPacks: normalizeRows<DomainState["contextPacks"]>(contextPackRows),
+      contextPackEvidence: normalizeRows<DomainState["contextPackEvidence"]>(
         contextPackEvidenceRows,
       ),
-      agentRuns: castRows<DomainState["agentRuns"]>(agentRunRows),
-      runEvents: castRows<DomainState["runEvents"]>(runEventRows),
-      outcomes: castRows<DomainState["outcomes"]>(outcomeRows),
-      evaluationResults: castRows<DomainState["evaluationResults"]>(evaluationRows),
+      agentRuns: normalizeRows<DomainState["agentRuns"]>(agentRunRows),
+      runEvents: normalizeRows<DomainState["runEvents"]>(runEventRows),
+      outcomes: normalizeRows<DomainState["outcomes"]>(outcomeRows),
+      evaluationResults: normalizeRows<DomainState["evaluationResults"]>(evaluationRows),
     };
   }
 
   async create(state: DomainState): Promise<void> {
-    await this.persist(state, null);
+    await this.db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(workspaces)
+        .values(state.workspace)
+        .onConflictDoNothing()
+        .returning({ id: workspaces.id });
+      if (inserted.length !== 1) throw concurrentUpdate();
+      await this.persistRows(tx, state);
+    });
   }
 
   async save(state: DomainState, expectedVersion: number): Promise<void> {
-    await this.persist(state, expectedVersion);
+    await this.db.transaction(async (tx) => {
+      await this.updateWorkspace(tx, state, expectedVersion);
+      await this.persistRows(tx, state);
+    });
   }
 
-  private async persist(state: DomainState, expectedVersion: number | null): Promise<void> {
-    if (expectedVersion === null) {
-      await this.db.insert(workspaces).values(state.workspace).onConflictDoNothing();
-    } else {
-      const updated = await this.db
-        .update(workspaces)
-        .set({
-          name: state.workspace.name,
-          edition: state.workspace.edition,
-          version: state.workspace.version,
-          updatedAt: state.workspace.updatedAt,
-        })
-        .where(
-          and(
-            eq(workspaces.id, state.workspace.id),
-            eq(workspaces.version, expectedVersion),
-          ),
-        )
-        .returning({ id: workspaces.id });
-      if (updated.length !== 1) {
-        throw new DomainError(
-          "CONCURRENT_UPDATE",
-          "Workspace state changed while this command was running. Refresh and retry.",
-          409,
-        );
-      }
-    }
+  private async updateWorkspace(
+    tx: TransactionDb,
+    state: DomainState,
+    expectedVersion: number,
+  ): Promise<void> {
+    const updated = await tx
+      .update(workspaces)
+      .set({
+        slug: state.workspace.slug,
+        name: state.workspace.name,
+        edition: state.workspace.edition,
+        version: state.workspace.version,
+        updatedAt: state.workspace.updatedAt,
+      })
+      .where(
+        and(
+          eq(workspaces.id, state.workspace.id),
+          eq(workspaces.version, expectedVersion),
+        ),
+      )
+      .returning({ id: workspaces.id });
+    if (updated.length !== 1) throw concurrentUpdate();
+  }
 
-    for (const row of state.scopes) {
-      await this.db.insert(scopes).values(row).onConflictDoNothing();
+  private async persistRows(tx: TransactionDb, state: DomainState): Promise<void> {
+    if (state.scopes.length) {
+      await tx.insert(scopes).values(state.scopes).onConflictDoNothing();
     }
-    for (const row of state.actors) {
-      await this.db
+    if (state.actors.length) {
+      await tx
         .insert(actors)
-        .values(row)
+        .values(state.actors)
         .onConflictDoUpdate({
           target: actors.id,
           set: {
-            displayName: row.displayName,
-            role: row.role,
-            permissions: row.permissions,
-            writeBudget: row.writeBudget,
-            active: row.active,
-            updatedAt: row.updatedAt,
+            displayName: sql`excluded.display_name`,
+            role: sql`excluded.role`,
+            permissions: sql`excluded.permissions`,
+            writeBudget: sql`excluded.write_budget`,
+            active: sql`excluded.active`,
+            updatedAt: sql`excluded.updated_at`,
           },
         });
     }
-    for (const row of state.sources) {
-      await this.db.insert(sources).values(row).onConflictDoNothing();
+    if (state.sources.length) {
+      await tx.insert(sources).values(state.sources).onConflictDoNothing();
     }
-    for (const row of state.sourceEvents) {
-      await this.db.insert(sourceEvents).values(row).onConflictDoNothing();
+    if (state.sourceEvents.length) {
+      await tx.insert(sourceEvents).values(state.sourceEvents).onConflictDoNothing();
     }
-    for (const row of state.entities) {
-      await this.db
+    if (state.entities.length) {
+      await tx
         .insert(entities)
-        .values(row)
+        .values(state.entities)
         .onConflictDoUpdate({
           target: entities.id,
-          set: { name: row.name, attributes: row.attributes, updatedAt: row.updatedAt },
+          set: {
+            name: sql`excluded.name`,
+            attributes: sql`excluded.attributes`,
+            updatedAt: sql`excluded.updated_at`,
+          },
         });
     }
-    for (const row of state.relationships) {
-      await this.db.insert(relationships).values(row).onConflictDoNothing();
+    if (state.relationships.length) {
+      await tx.insert(relationships).values(state.relationships).onConflictDoNothing();
     }
-    for (const row of state.claims) {
-      await this.db
+    if (state.claims.length) {
+      await tx
         .insert(claims)
-        .values(row)
+        .values(state.claims)
         .onConflictDoUpdate({
           target: claims.id,
           set: {
-            lifecycle: row.lifecycle,
-            supersedesClaimId: row.supersedesClaimId,
-            version: row.version,
-            updatedAt: row.updatedAt,
+            lifecycle: sql`excluded.lifecycle`,
+            supersedesClaimId: sql`excluded.supersedes_claim_id`,
+            version: sql`excluded.version`,
+            updatedAt: sql`excluded.updated_at`,
           },
         });
     }
-    for (const row of state.memoryEvents) {
-      await this.db.insert(memoryEvents).values(row).onConflictDoNothing();
+    if (state.memoryEvents.length) {
+      await tx.insert(memoryEvents).values(state.memoryEvents).onConflictDoNothing();
     }
-    for (const row of state.conflicts) {
-      await this.db
+    if (state.conflicts.length) {
+      await tx
         .insert(conflicts)
-        .values(row)
+        .values(state.conflicts)
         .onConflictDoUpdate({
           target: conflicts.id,
           set: {
-            status: row.status,
-            resolvedAt: row.resolvedAt,
-            resolutionClaimId: row.resolutionClaimId,
-            updatedAt: row.updatedAt,
+            status: sql`excluded.status`,
+            resolvedAt: sql`excluded.resolved_at`,
+            resolutionClaimId: sql`excluded.resolution_claim_id`,
+            updatedAt: sql`excluded.updated_at`,
           },
         });
     }
-    for (const row of state.approvals) {
-      await this.db.insert(approvals).values(row).onConflictDoNothing();
+    if (state.approvals.length) {
+      await tx.insert(approvals).values(state.approvals).onConflictDoNothing();
     }
-    for (const row of state.contextPacks) {
-      await this.db
+    if (state.contextPacks.length) {
+      await tx
         .insert(contextPacks)
-        .values({
+        .values(state.contextPacks.map((row) => ({
           ...row,
           facts: castRows<Array<Record<string, unknown>>>(row.facts),
           citations: castRows<Array<Record<string, unknown>>>(row.citations),
-        })
+        })))
         .onConflictDoUpdate({
           target: contextPacks.id,
-          set: { invalidatedAt: row.invalidatedAt },
+          set: { invalidatedAt: sql`excluded.invalidated_at` },
         });
     }
-    for (const row of state.contextPackEvidence) {
-      await this.db.insert(contextPackEvidence).values(row).onConflictDoNothing();
+    if (state.contextPackEvidence.length) {
+      await tx
+        .insert(contextPackEvidence)
+        .values(state.contextPackEvidence)
+        .onConflictDoNothing();
     }
-    for (const row of state.agentRuns) {
-      await this.db.insert(agentRuns).values(row).onConflictDoNothing();
+    if (state.agentRuns.length) {
+      await tx.insert(agentRuns).values(state.agentRuns).onConflictDoNothing();
     }
-    for (const row of state.runEvents) {
-      await this.db.insert(runEvents).values(row).onConflictDoNothing();
+    if (state.runEvents.length) {
+      await tx.insert(runEvents).values(state.runEvents).onConflictDoNothing();
     }
-    for (const row of state.outcomes) {
-      await this.db.insert(outcomes).values(row).onConflictDoNothing();
+    if (state.outcomes.length) {
+      await tx.insert(outcomes).values(state.outcomes).onConflictDoNothing();
     }
-    for (const row of state.evaluationResults) {
-      await this.db.insert(evaluationResults).values(row).onConflictDoNothing();
+    if (state.evaluationResults.length) {
+      await tx
+        .insert(evaluationResults)
+        .values(state.evaluationResults)
+        .onConflictDoNothing();
     }
   }
 
   async reset(state: DomainState): Promise<void> {
-    const workspaceId = state.workspace.id;
-    const tables = [
-      evaluationResults,
-      outcomes,
-      runEvents,
-      agentRuns,
-      contextPackEvidence,
-      contextPacks,
-      approvals,
-      conflicts,
-      memoryEvents,
-      claims,
-      relationships,
-      entities,
-      sourceEvents,
-      sources,
-      actors,
-      scopes,
-    ] as const;
-    for (const table of tables) {
-      await this.db.delete(table).where(eq(table.workspaceId, workspaceId));
-    }
-    await this.db.delete(workspaces).where(eq(workspaces.id, workspaceId));
-    await this.create(state);
+    await this.db.transaction(async (tx) => {
+      const workspaceId = state.workspace.id;
+      await this.updateWorkspace(tx, state, state.workspace.version - 1);
+      const tables = [
+        evaluationResults,
+        outcomes,
+        runEvents,
+        agentRuns,
+        contextPackEvidence,
+        contextPacks,
+        approvals,
+        conflicts,
+        memoryEvents,
+        claims,
+        relationships,
+        entities,
+        sourceEvents,
+        sources,
+        actors,
+        scopes,
+      ] as const;
+      for (const table of tables) {
+        await tx.delete(table).where(eq(table.workspaceId, workspaceId));
+      }
+      await this.persistRows(tx, state);
+    });
   }
+}
+
+function concurrentUpdate(): DomainError {
+  return new DomainError(
+    "CONCURRENT_UPDATE",
+    "Workspace state changed while this command was running. Refresh and retry.",
+    409,
+  );
 }
 
 const memoryHost = globalThis as typeof globalThis & {
@@ -330,26 +459,83 @@ class MemoryDomainStore implements DomainStore {
 
 const memoryStore = new MemoryDomainStore();
 
-export async function openWorkspace(workspaceValue: unknown): Promise<WorkspaceSession> {
-  const workspaceId = normalizeWorkspace(workspaceValue);
-  const db = await tryGetDb();
-  if (db) {
-    const store = new D1DomainStore(db);
+function isCompleteWorkspaceState(state: DomainState): boolean {
+  return (
+    state.scopes.length >= 3 &&
+    state.actors.length >= 3 &&
+    state.sources.length >= 5 &&
+    state.entities.length >= 7 &&
+    state.claims.length >= 19 &&
+    state.contextPacks.length >= 1 &&
+    state.agentRuns.length >= 1 &&
+    state.evaluationResults.length === 24 &&
+    state.evaluationResults.every(
+      (result) =>
+        result.suite === "commonstate-domain-v2" &&
+        result.details.executed === true &&
+        result.details.fixtureVersion === "tano-demo-v2",
+    )
+  );
+}
+
+async function openFromPostgres(
+  workspaceId: string,
+  resolveDb: () => Promise<CommonstateDb | null>,
+): Promise<WorkspaceSession | null> {
+  const db = await resolveDb();
+  if (!db) return null;
+
+  const store = new PostgresDomainStore(db);
+  let state = await store.load(workspaceId);
+  if (!state) {
+    state = await createSeedState(workspaceId);
     try {
-      let state = await store.load(workspaceId);
-      if (!state) {
-        state = await createSeedState(workspaceId);
-        await store.create(state);
-      }
-      return {
-        state,
-        store,
-        storage: { mode: "d1", deterministic: true, notice: null },
-      };
+      await store.create(state);
     } catch (error) {
-      if (error instanceof DomainError && error.code === "CONCURRENT_UPDATE") throw error;
+      if (!(error instanceof DomainError) || error.code !== "CONCURRENT_UPDATE") {
+        throw error;
+      }
+      const concurrentlyCreated = await store.load(workspaceId);
+      if (!concurrentlyCreated) throw error;
+      state = concurrentlyCreated;
     }
+  } else if (!isCompleteWorkspaceState(state)) {
+    throw storageUnavailable();
   }
+  return {
+    state,
+    store,
+    storage: { mode: "postgres", deterministic: true, notice: null },
+  };
+}
+
+type WorkspaceOpenOptions = {
+  deadlineMs?: number;
+  resolveDb?: () => Promise<CommonstateDb | null>;
+};
+
+/** The options hook is intentionally narrow so tests can model stalled storage
+ * resolver without weakening production workspace selection or store scope. */
+export async function openWorkspace(
+  workspaceValue: unknown,
+  options: WorkspaceOpenOptions = {},
+): Promise<WorkspaceSession> {
+  const workspaceId = normalizeWorkspace(workspaceValue);
+  const deadlineMs = options.deadlineMs ?? WORKSPACE_OPEN_DEADLINE_MS;
+  let fallbackNotice = "Postgres is unavailable; local memory persistence is active.";
+  try {
+    const session = await withDeadline(
+      () => openFromPostgres(workspaceId, options.resolveDb ?? tryGetDb),
+      deadlineMs,
+      "workspace storage open",
+    );
+    if (session) return session;
+  } catch (error) {
+    if (error instanceof DomainError && error.code === "CONCURRENT_UPDATE") throw error;
+    fallbackNotice = `Postgres did not become available within the ${deadlineMs}ms workspace deadline; local memory persistence is active.`;
+  }
+
+  if (!canUseLocalMemory()) throw storageUnavailable();
 
   let state = await memoryStore.load(workspaceId);
   if (!state) {
@@ -360,9 +546,9 @@ export async function openWorkspace(workspaceValue: unknown): Promise<WorkspaceS
     state,
     store: memoryStore,
     storage: {
-      mode: "memory-fallback",
+      mode: "memory-local",
       deterministic: true,
-      notice: "D1 is unavailable or not migrated; this isolated demo workspace is using in-memory persistence.",
+      notice: fallbackNotice,
     },
   };
 }
@@ -381,11 +567,12 @@ export async function commitWorkspace(
     return session.storage;
   } catch (error) {
     if (error instanceof DomainError) throw error;
+    if (!canUseLocalMemory()) throw storageUnavailable();
     await memoryStore.save(nextState, expectedVersion);
     return {
-      mode: "memory-fallback",
+      mode: "memory-local",
       deterministic: true,
-      notice: "The D1 write failed safely; the isolated demo continued in memory for this Worker instance.",
+      notice: "The Postgres write failed locally; the isolated demo continued in process memory.",
     };
   }
 }
@@ -402,15 +589,32 @@ export async function resetWorkspace(session: WorkspaceSession): Promise<{
   try {
     await session.store.reset(state);
     return { state, storage: session.storage };
-  } catch {
+  } catch (error) {
+    if (error instanceof DomainError) throw error;
+    if (!canUseLocalMemory()) throw storageUnavailable();
     await memoryStore.reset(state);
     return {
       state,
       storage: {
-        mode: "memory-fallback",
+        mode: "memory-local",
         deterministic: true,
-        notice: "D1 reset was unavailable; the isolated in-memory demo workspace was reset instead.",
+        notice: "Postgres reset was unavailable locally; process memory was reset instead.",
       },
     };
   }
+}
+
+function canUseLocalMemory(): boolean {
+  return (
+    process.env.NODE_ENV !== "production" ||
+    process.env.COMMONSTATE_TEST_MEMORY === "1"
+  );
+}
+
+function storageUnavailable(): DomainError {
+  return new DomainError(
+    "STORAGE_UNAVAILABLE",
+    "Operational state storage is temporarily unavailable. Retry shortly or use the recorded demo.",
+    503,
+  );
 }

@@ -13,7 +13,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reject legacy hosted-runtime coupling
+        shell: bash
+        run: |
+          if git grep -nEi '(vinext|cloudflare:workers|@cloudflare/|wrangler|/_vinext|dist/server|\.openai/hosting)' -- . ':(exclude).github/**' ':(exclude)docs/**' ':(exclude)README.md' ':(exclude)tests/**' ':(exclude)package-lock.json'; then
+            echo 'Legacy ChatGPT Sites, Vinext, or Cloudflare runtime coupling remains.' >&2
+            exit 1
+          fi
+          node -e 'const p=require("./package.json"); const names=Object.keys({...p.dependencies,...p.devDependencies}); const forbidden=["vinext","vite","wrangler","@cloudflare/vite-plugin","@cloudflare/workers-types","@vitejs/plugin-react","@vitejs/plugin-rsc"]; const found=forbidden.filter((name)=>names.includes(name)); if(found.length) { console.error(`Forbidden direct dependencies: ${found.join(", ")}`); process.exit(1); }'
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+  node-contracts:
+    needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -30,28 +63,186 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - name: Build native Next production output
+        run: npm run build
 
-      - name: Type-check
-        run: npm run typecheck
+      - name: Run domain, route, API, and rendered-page contracts
+        run: node --test tests/*.test.mjs
 
-      - name: Build and run deterministic Node tests
-        run: npm test
+  postgres-integration:
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://commonstate:commonstate@127.0.0.1:5432/commonstate_test
+      COMMONSTATE_EXPECT_STORAGE_MODE: postgres
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: commonstate_test
+          POSTGRES_USER: commonstate
+          POSTGRES_PASSWORD: commonstate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U commonstate -d commonstate_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply Postgres migrations
+        run: |
+          npm run db:migrate
+          npm run db:migrate
+
+      - name: Build native Next production output
+        run: npm run build
+
+      - name: Verify contracts against durable storage
+        run: node --test tests/domain.test.mjs tests/api.test.mjs tests/rendered-html.test.mjs tests/performance.test.mjs tests/postgres-repository.test.mjs
+
+  browser-live:
+    needs: [node-contracts, postgres-integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://commonstate:commonstate@127.0.0.1:5432/commonstate_browser
+      COMMONSTATE_EXPECT_STORAGE_MODE: postgres
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: commonstate_browser
+          POSTGRES_USER: commonstate
+          POSTGRES_PASSWORD: commonstate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U commonstate -d commonstate_browser"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply Postgres migrations
+        run: npm run db:migrate
+
+      - name: Build native Next production output
+        run: npm run build
 
       - name: Install Chromium
         run: npm run playwright:install
 
-      - name: Run browser smoke tests
-        run: npm run test:e2e
+      - name: Run live browser workflows
+        run: npx --no-install playwright test --config playwright.config.ts
 
-      - name: Upload browser test artifacts
+      - name: Upload live browser artifacts
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-live
           path: |
             playwright-report/
             test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  browser-recorded:
+    needs: node-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build native Next production output and bundled recording
+        run: npm run build
+
+      - name: Install Chromium
+        run: npm run playwright:install
+
+      - name: Run recorded no-API workflows
+        run: npx --no-install playwright test --config playwright.recorded.config.ts
+
+      - name: Upload recorded browser artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-recorded
+          path: |
+            playwright-recorded-report/
+            test-results-recorded/
+            public/demo/recorded-tano-v1.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  lighthouse:
+    needs: node-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build native Next production output
+        run: npm run build
+
+      - name: Enforce Lighthouse accessibility and best-practices gates
+        run: npx --no-install lhci autorun --config lighthouserc.cjs
+
+      - name: Upload Lighthouse reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse
+          path: .lighthouseci/
           if-no-files-found: ignore
           retention-days: 7

@@ -1,46 +1,47 @@
-import { drizzle } from "drizzle-orm/d1";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import * as schema from "./schema";
-
-type D1Binding = Parameters<typeof drizzle>[0];
-
-async function getD1Binding(): Promise<D1Binding | null> {
-  try {
-    // Lazy loading keeps plain Node from resolving the Cloudflare-only protocol
-    // at module load while retaining a statically discoverable Worker import.
-    // @ts-expect-error `cloudflare:workers` exists in the Worker runtime.
-    const workers = (await import("cloudflare:workers")) as {
-      env?: Record<string, unknown>;
-    };
-    return (workers.env?.DB as D1Binding | undefined) ?? null;
-  } catch {
-    return null;
-  }
-}
 
 export type CommonstateDb = ReturnType<typeof drizzle<typeof schema>>;
 
-/** Legacy synchronous accessor retained for the opt-in example route. */
-export function getDb(): CommonstateDb {
-  const workerGlobal = globalThis as typeof globalThis & { DB?: D1Binding };
-  const binding = workerGlobal.DB ?? null;
-  if (!binding) {
-    throw new Error(
-      "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or let the control plane inject the real binding values before using the database.",
-    );
-  }
-  return drizzle(binding, { schema });
+let client: ReturnType<typeof postgres> | null = null;
+let database: CommonstateDb | null = null;
+
+function connectionUrl(): string | null {
+  const value = process.env.DATABASE_URL?.trim();
+  return value ? value : null;
 }
 
 /**
- * API routes use this when the interactive demo should remain usable without a
- * local D1 binding (for example during a plain Node build). Production writes
- * still prefer D1 whenever the binding is present.
+ * Return the process-local Drizzle client. Supabase's transaction pooler does
+ * not support prepared statements, so they are disabled explicitly.
  */
-export async function tryGetDb(): Promise<CommonstateDb | null> {
-  try {
-    const binding = await getD1Binding();
-    return binding ? drizzle(binding, { schema }) : null;
-  } catch {
-    return null;
+export function getDb(): CommonstateDb {
+  if (database) return database;
+
+  const url = connectionUrl();
+  if (!url) {
+    throw new Error("DATABASE_URL is required for PostgreSQL persistence.");
   }
+
+  client = postgres(url, {
+    prepare: false,
+    max: Number(process.env.POSTGRES_POOL_MAX ?? "3"),
+    connect_timeout: 5,
+    idle_timeout: 20,
+  });
+  database = drizzle(client, { schema });
+  return database;
+}
+
+/** Return null only when persistence is intentionally unconfigured locally. */
+export async function tryGetDb(): Promise<CommonstateDb | null> {
+  return connectionUrl() ? getDb() : null;
+}
+
+/** Test/process-shutdown hook; application requests reuse the singleton. */
+export async function closeDb(): Promise<void> {
+  if (client) await client.end({ timeout: 5 });
+  client = null;
+  database = null;
 }

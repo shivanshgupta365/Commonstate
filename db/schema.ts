@@ -1,18 +1,24 @@
-import { sql } from "drizzle-orm";
 import {
+  boolean,
   index,
   integer,
-  sqliteTable,
+  jsonb,
+  pgTable,
   text,
+  timestamp,
   uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+} from "drizzle-orm/pg-core";
 
 const timestamps = {
-  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" })
+    .notNull()
+    .defaultNow(),
 };
 
-export const workspaces = sqliteTable(
+export const workspaces = pgTable(
   "workspaces",
   {
     id: text("id").primaryKey(),
@@ -25,7 +31,7 @@ export const workspaces = sqliteTable(
   (table) => [uniqueIndex("workspaces_slug_unique").on(table.slug)],
 );
 
-export const scopes = sqliteTable(
+export const scopes = pgTable(
   "scopes",
   {
     id: text("id").primaryKey(),
@@ -43,7 +49,7 @@ export const scopes = sqliteTable(
   ],
 );
 
-export const actors = sqliteTable(
+export const actors = pgTable(
   "actors",
   {
     id: text("id").primaryKey(),
@@ -54,17 +60,17 @@ export const actors = sqliteTable(
     displayName: text("display_name").notNull(),
     email: text("email"),
     role: text("role").notNull(),
-    permissions: text("permissions", { mode: "json" })
+    permissions: jsonb("permissions")
       .$type<string[]>()
       .notNull(),
     writeBudget: integer("write_budget").notNull().default(0),
-    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    active: boolean("active").notNull().default(true),
     ...timestamps,
   },
   (table) => [index("actors_workspace_type_idx").on(table.workspaceId, table.actorType)],
 );
 
-export const sources = sqliteTable(
+export const sources = pgTable(
   "sources",
   {
     id: text("id").primaryKey(),
@@ -76,11 +82,11 @@ export const sources = sqliteTable(
     title: text("title").notNull(),
     uri: text("uri"),
     classification: text("classification").notNull(),
-    immutable: integer("immutable", { mode: "boolean" }).notNull().default(true),
+    immutable: boolean("immutable").notNull().default(true),
     sha256: text("sha256").notNull(),
-    capturedAt: text("captured_at").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true, mode: "string" }).notNull(),
     contentText: text("content_text").notNull(),
-    metadata: text("metadata", { mode: "json" })
+    metadata: jsonb("metadata")
       .$type<Record<string, unknown>>()
       .notNull(),
     ...timestamps,
@@ -91,7 +97,7 @@ export const sources = sqliteTable(
   ],
 );
 
-export const sourceEvents = sqliteTable(
+export const sourceEvents = pgTable(
   "source_events",
   {
     id: text("id").primaryKey(),
@@ -104,10 +110,12 @@ export const sourceEvents = sqliteTable(
     eventType: text("event_type").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     sourceHash: text("source_hash").notNull(),
-    payload: text("payload", { mode: "json" })
+    payload: jsonb("payload")
       .$type<Record<string, unknown>>()
       .notNull(),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     uniqueIndex("source_events_workspace_idempotency_unique").on(
@@ -118,7 +126,7 @@ export const sourceEvents = sqliteTable(
   ],
 );
 
-export const entities = sqliteTable(
+export const entities = pgTable(
   "entities",
   {
     id: text("id").primaryKey(),
@@ -129,7 +137,7 @@ export const entities = sqliteTable(
     entityType: text("entity_type").notNull(),
     name: text("name").notNull(),
     externalRef: text("external_ref"),
-    attributes: text("attributes", { mode: "json" })
+    attributes: jsonb("attributes")
       .$type<Record<string, unknown>>()
       .notNull(),
     ...timestamps,
@@ -139,7 +147,7 @@ export const entities = sqliteTable(
   ],
 );
 
-export const relationships = sqliteTable(
+export const relationships = pgTable(
   "relationships",
   {
     id: text("id").primaryKey(),
@@ -153,12 +161,14 @@ export const relationships = sqliteTable(
       .notNull()
       .references(() => entities.id, { onDelete: "cascade" }),
     relationshipType: text("relationship_type").notNull(),
-    validFrom: text("valid_from").notNull(),
-    validTo: text("valid_to"),
-    attributes: text("attributes", { mode: "json" })
+    validFrom: timestamp("valid_from", { withTimezone: true, mode: "string" }).notNull(),
+    validTo: timestamp("valid_to", { withTimezone: true, mode: "string" }),
+    attributes: jsonb("attributes")
       .$type<Record<string, unknown>>()
       .notNull(),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     index("relationships_workspace_from_idx").on(table.workspaceId, table.fromEntityId),
@@ -166,7 +176,7 @@ export const relationships = sqliteTable(
   ],
 );
 
-export const claims = sqliteTable(
+export const claims = pgTable(
   "claims",
   {
     id: text("id").primaryKey(),
@@ -180,7 +190,7 @@ export const claims = sqliteTable(
       .notNull()
       .references(() => entities.id, { onDelete: "cascade" }),
     predicate: text("predicate").notNull(),
-    value: text("value", { mode: "json" }).$type<unknown>().notNull(),
+    value: jsonb("value").$type<unknown>().notNull(),
     valueType: text("value_type").notNull(),
     sourceId: text("source_id")
       .notNull()
@@ -192,16 +202,16 @@ export const claims = sqliteTable(
     authorActorId: text("author_actor_id")
       .notNull()
       .references(() => actors.id, { onDelete: "restrict" }),
-    observedAt: text("observed_at").notNull(),
-    validFrom: text("valid_from").notNull(),
-    validTo: text("valid_to"),
+    observedAt: timestamp("observed_at", { withTimezone: true, mode: "string" }).notNull(),
+    validFrom: timestamp("valid_from", { withTimezone: true, mode: "string" }).notNull(),
+    validTo: timestamp("valid_to", { withTimezone: true, mode: "string" }),
     confidence: integer("confidence").notNull(),
     authority: text("authority").notNull(),
     lifecycle: text("lifecycle").notNull(),
     supersedesClaimId: text("supersedes_claim_id"),
     classification: text("classification").notNull(),
     freshnessSeconds: integer("freshness_seconds").notNull(),
-    acl: text("acl", { mode: "json" }).$type<string[]>().notNull(),
+    acl: jsonb("acl").$type<string[]>().notNull(),
     version: integer("version").notNull().default(1),
     ...timestamps,
   },
@@ -221,7 +231,7 @@ export const claims = sqliteTable(
   ],
 );
 
-export const memoryEvents = sqliteTable(
+export const memoryEvents = pgTable(
   "memory_events",
   {
     id: text("id").primaryKey(),
@@ -233,10 +243,10 @@ export const memoryEvents = sqliteTable(
     aggregateType: text("aggregate_type").notNull(),
     aggregateId: text("aggregate_id").notNull(),
     summary: text("summary").notNull(),
-    payload: text("payload", { mode: "json" })
+    payload: jsonb("payload")
       .$type<Record<string, unknown>>()
       .notNull(),
-    createdAt: text("created_at").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   },
   (table) => [
     uniqueIndex("memory_events_workspace_sequence_unique").on(
@@ -246,7 +256,7 @@ export const memoryEvents = sqliteTable(
   ],
 );
 
-export const conflicts = sqliteTable(
+export const conflicts = pgTable(
   "conflicts",
   {
     id: text("id").primaryKey(),
@@ -265,8 +275,8 @@ export const conflicts = sqliteTable(
     risk: text("risk").notNull(),
     status: text("status").notNull(),
     reason: text("reason").notNull(),
-    detectedAt: text("detected_at").notNull(),
-    resolvedAt: text("resolved_at"),
+    detectedAt: timestamp("detected_at", { withTimezone: true, mode: "string" }).notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "string" }),
     resolutionClaimId: text("resolution_claim_id"),
     ...timestamps,
   },
@@ -279,7 +289,7 @@ export const conflicts = sqliteTable(
   ],
 );
 
-export const approvals = sqliteTable(
+export const approvals = pgTable(
   "approvals",
   {
     id: text("id").primaryKey(),
@@ -296,12 +306,12 @@ export const approvals = sqliteTable(
     reason: text("reason").notNull(),
     previousLifecycle: text("previous_lifecycle").notNull(),
     resultingLifecycle: text("resulting_lifecycle").notNull(),
-    createdAt: text("created_at").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   },
   (table) => [index("approvals_workspace_claim_idx").on(table.workspaceId, table.claimId)],
 );
 
-export const contextPacks = sqliteTable(
+export const contextPacks = pgTable(
   "context_packs",
   {
     id: text("id").primaryKey(),
@@ -312,20 +322,20 @@ export const contextPacks = sqliteTable(
       .notNull()
       .references(() => scopes.id, { onDelete: "cascade" }),
     task: text("task").notNull(),
-    entityRefs: text("entity_refs", { mode: "json" }).$type<string[]>().notNull(),
-    asOf: text("as_of").notNull(),
+    entityRefs: jsonb("entity_refs").$type<string[]>().notNull(),
+    asOf: timestamp("as_of", { withTimezone: true, mode: "string" }).notNull(),
     versionHash: text("version_hash").notNull(),
-    facts: text("facts", { mode: "json" })
+    facts: jsonb("facts")
       .$type<Array<Record<string, unknown>>>()
       .notNull(),
-    constraints: text("constraints", { mode: "json" }).$type<string[]>().notNull(),
-    blockers: text("blockers", { mode: "json" }).$type<string[]>().notNull(),
-    citations: text("citations", { mode: "json" })
+    constraints: jsonb("constraints").$type<string[]>().notNull(),
+    blockers: jsonb("blockers").$type<string[]>().notNull(),
+    citations: jsonb("citations")
       .$type<Array<Record<string, unknown>>>()
       .notNull(),
     freshnessStatus: text("freshness_status").notNull(),
-    createdAt: text("created_at").notNull(),
-    invalidatedAt: text("invalidated_at"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+    invalidatedAt: timestamp("invalidated_at", { withTimezone: true, mode: "string" }),
   },
   (table) => [
     uniqueIndex("context_packs_workspace_version_unique").on(
@@ -335,7 +345,7 @@ export const contextPacks = sqliteTable(
   ],
 );
 
-export const contextPackEvidence = sqliteTable(
+export const contextPackEvidence = pgTable(
   "context_pack_evidence",
   {
     id: text("id").primaryKey(),
@@ -353,7 +363,7 @@ export const contextPackEvidence = sqliteTable(
       .references(() => sources.id, { onDelete: "restrict" }),
     sourceSpan: text("source_span").notNull(),
     ordinal: integer("ordinal").notNull(),
-    createdAt: text("created_at").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   },
   (table) => [
     uniqueIndex("context_pack_evidence_unique").on(
@@ -363,7 +373,7 @@ export const contextPackEvidence = sqliteTable(
   ],
 );
 
-export const agentRuns = sqliteTable(
+export const agentRuns = pgTable(
   "agent_runs",
   {
     id: text("id").primaryKey(),
@@ -383,19 +393,19 @@ export const agentRuns = sqliteTable(
     model: text("model").notNull(),
     modelVersion: text("model_version").notNull(),
     promptVersion: text("prompt_version").notNull(),
-    tools: text("tools", { mode: "json" }).$type<string[]>().notNull(),
-    decision: text("decision", { mode: "json" })
+    tools: jsonb("tools").$type<string[]>().notNull(),
+    decision: jsonb("decision")
       .$type<Record<string, unknown>>()
       .notNull(),
-    approvalIds: text("approval_ids", { mode: "json" }).$type<string[]>().notNull(),
+    approvalIds: jsonb("approval_ids").$type<string[]>().notNull(),
     latencyMs: integer("latency_ms").notNull(),
     tokenUsage: integer("token_usage").notNull(),
     costMicros: integer("cost_micros").notNull(),
-    startedAt: text("started_at").notNull(),
-    completedAt: text("completed_at").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }).notNull(),
     receiptHash: text("receipt_hash").notNull(),
     replayOfRunId: text("replay_of_run_id"),
-    createdAt: text("created_at").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   },
   (table) => [
     uniqueIndex("agent_runs_workspace_receipt_unique").on(
@@ -406,7 +416,7 @@ export const agentRuns = sqliteTable(
   ],
 );
 
-export const runEvents = sqliteTable(
+export const runEvents = pgTable(
   "run_events",
   {
     id: text("id").primaryKey(),
@@ -418,17 +428,17 @@ export const runEvents = sqliteTable(
       .references(() => agentRuns.id, { onDelete: "cascade" }),
     sequence: integer("sequence").notNull(),
     eventType: text("event_type").notNull(),
-    payload: text("payload", { mode: "json" })
+    payload: jsonb("payload")
       .$type<Record<string, unknown>>()
       .notNull(),
-    createdAt: text("created_at").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   },
   (table) => [
     uniqueIndex("run_events_run_sequence_unique").on(table.runId, table.sequence),
   ],
 );
 
-export const outcomes = sqliteTable(
+export const outcomes = pgTable(
   "outcomes",
   {
     id: text("id").primaryKey(),
@@ -439,7 +449,7 @@ export const outcomes = sqliteTable(
       .notNull()
       .references(() => agentRuns.id, { onDelete: "restrict" }),
     status: text("status").notNull(),
-    metrics: text("metrics", { mode: "json" })
+    metrics: jsonb("metrics")
       .$type<Record<string, number>>()
       .notNull(),
     notes: text("notes").notNull(),
@@ -448,7 +458,7 @@ export const outcomes = sqliteTable(
       .notNull()
       .references(() => actors.id, { onDelete: "restrict" }),
     receiptHash: text("receipt_hash").notNull(),
-    createdAt: text("created_at").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   },
   (table) => [
     uniqueIndex("outcomes_workspace_receipt_unique").on(
@@ -458,7 +468,7 @@ export const outcomes = sqliteTable(
   ],
 );
 
-export const evaluationResults = sqliteTable(
+export const evaluationResults = pgTable(
   "evaluation_results",
   {
     id: text("id").primaryKey(),
@@ -468,12 +478,12 @@ export const evaluationResults = sqliteTable(
     suite: text("suite").notNull(),
     category: text("category").notNull(),
     caseName: text("case_name").notNull(),
-    passed: integer("passed", { mode: "boolean" }).notNull(),
+    passed: boolean("passed").notNull(),
     durationMs: integer("duration_ms").notNull(),
-    details: text("details", { mode: "json" })
+    details: jsonb("details")
       .$type<Record<string, unknown>>()
       .notNull(),
-    runAt: text("run_at").notNull(),
+    runAt: timestamp("run_at", { withTimezone: true, mode: "string" }).notNull(),
   },
   (table) => [
     index("evaluation_results_workspace_suite_idx").on(

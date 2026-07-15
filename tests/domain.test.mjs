@@ -16,6 +16,19 @@ import {
   runRelationshipAgent,
   sha256,
 } from "../lib/commonstate/domain.ts";
+import { DeadlineExceededError, withDeadline } from "../lib/commonstate/deadline.ts";
+
+test("a never-resolving storage operation is released at its deadline", async () => {
+  const startedAt = Date.now();
+  await assert.rejects(
+    withDeadline(() => new Promise(() => {}), 20, "never-resolving storage test"),
+    (error) =>
+      error instanceof DeadlineExceededError &&
+      error.code === "DEADLINE_EXCEEDED" &&
+      error.deadlineMs === 20,
+  );
+  assert.ok(Date.now() - startedAt < 500);
+});
 
 test("seed is deterministic, cited, and reports the 24 acceptance evals", async () => {
   const [first, second] = await Promise.all([

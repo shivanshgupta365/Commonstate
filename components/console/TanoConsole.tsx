@@ -31,67 +31,35 @@ import {
   type ViewId,
   type WorkflowState,
 } from "./demoData";
+import {
+  bootstrapDemoClient,
+  type DemoApiError,
+  type DemoApiFailure,
+  type DemoApiResponse,
+  type DemoClient,
+} from "./demoClient";
 import styles from "./console.module.css";
 
-type DemoAction =
-  | "reset"
-  | "ask"
-  | "ingest"
-  | "approve"
-  | "reject"
-  | "run-agent"
-  | "replay"
-  | "outcome";
-
 type RequestState = "idle" | "asking" | "ingesting" | "approving" | "running" | "replaying" | "recording";
-
-type ApiError = { code: string; message: string };
-type ApiSuccess<T> = { ok: true; action?: string; result: T; state: BackendState };
-type ApiFailure = { ok: false; error: ApiError };
-type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 
 const wait = (milliseconds: number) =>
   new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
-async function callDemo<T>(action: DemoAction, body: Record<string, unknown> = {}): Promise<ApiResponse<T>> {
-  try {
-    const response = await fetch(`/api/demo/${action}`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null;
-    if (!response.ok || !payload || payload.ok !== true) {
-      return payload && payload.ok === false
-        ? payload
-        : { ok: false, error: { code: `HTTP_${response.status}`, message: "The demo API rejected this request." } };
-    }
-    return payload;
-  } catch {
-    return { ok: false, error: { code: "NETWORK_ERROR", message: "The demo API could not be reached." } };
+async function callDemo<T>(
+  client: DemoClient | null,
+  action: Parameters<DemoClient["execute"]>[0],
+  body: Record<string, unknown> = {},
+): Promise<DemoApiResponse<T>> {
+  if (!client) {
+    return {
+      ok: false,
+      error: {
+        code: "DEMO_NOT_READY",
+        message: "The demo is still loading. Try again in a moment.",
+      },
+    } satisfies DemoApiFailure;
   }
-}
-
-async function getDemoState(): Promise<ApiSuccess<never> | ApiFailure> {
-  try {
-    const response = await fetch("/api/demo/state", {
-      credentials: "same-origin",
-      cache: "no-store",
-    });
-    const payload = (await response.json().catch(() => null)) as
-      | { ok: true; state: BackendState }
-      | ApiFailure
-      | null;
-    if (!response.ok || !payload || payload.ok !== true) {
-      return payload && payload.ok === false
-        ? payload
-        : { ok: false, error: { code: `HTTP_${response.status}`, message: "The isolated demo state could not be loaded." } };
-    }
-    return { ok: true, result: undefined as never, state: payload.state };
-  } catch {
-    return { ok: false, error: { code: "NETWORK_ERROR", message: "The isolated demo state could not be loaded." } };
-  }
+  return client.execute<T>(action, body);
 }
 
 function oldestRecordedRun(state: BackendState): BackendRun | null {
@@ -233,6 +201,8 @@ export function TanoConsole() {
   const [baselineRunId, setBaselineRunId] = useState<string | null>(null);
   const [backendRunId, setBackendRunId] = useState<string | null>(null);
   const [mode, setMode] = useState<"recorded" | "fresh">("recorded");
+  const [demoClient, setDemoClient] = useState<DemoClient | null>(null);
+  const [recordedRecoveryAvailable, setRecordedRecoveryAvailable] = useState(false);
   const [guideOpen, setGuideOpen] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
@@ -281,14 +251,29 @@ export function TanoConsole() {
 
   useEffect(() => {
     let cancelled = false;
-    void getDemoState().then((response) => {
+    const forceRecorded = new URLSearchParams(window.location.search).get("demo") === "recorded";
+    void bootstrapDemoClient({ forceRecorded }).then((bootstrap) => {
       if (cancelled) return;
+      const { response } = bootstrap;
       if (!response.ok) {
         notify(`State unavailable · ${response.error.message}`, "error");
         return;
       }
+      if (!bootstrap.client) {
+        notify("State unavailable · no demo client was selected", "error");
+        return;
+      }
+      setDemoClient(bootstrap.client);
       setBackendState(response.state);
       setBaselineRunId(oldestRecordedRun(response.state)?.id ?? null);
+      if (bootstrap.client.mode === "recorded") {
+        setMode("recorded");
+        notify(
+          bootstrap.fallbackReason
+            ? `Fresh API unavailable · recorded deterministic workspace loaded (${bootstrap.fallbackReason.code})`
+            : "Recorded deterministic workspace loaded · live API intentionally skipped",
+        );
+      }
     });
     return () => { cancelled = true; };
   }, []);
@@ -343,18 +328,32 @@ export function TanoConsole() {
     setWorkflow((current) => ({ ...current, [key]: true }));
   }
 
+  function offerRecordedRecovery(error: DemoApiError) {
+    if (
+      demoClient?.mode === "fresh" &&
+      (error.code === "NETWORK_ERROR" ||
+        error.code === "REQUEST_TIMEOUT" ||
+        error.code === "STORAGE_UNAVAILABLE" ||
+        error.status === 503)
+    ) {
+      setRecordedRecoveryAvailable(true);
+    }
+  }
+
   async function askCommonstate() {
     if (!question.trim()) {
       notify("Write a question before asking Commonstate.", "error");
       return;
     }
     setRequestState("asking");
-    const [response] = await Promise.all([callDemo<AskResult>("ask", { question }), wait(420)]);
+    const [response] = await Promise.all([callDemo<AskResult>(demoClient, "ask", { question }), wait(420)]);
     if (!response.ok) {
       setRequestState("idle");
+      offerRecordedRecovery(response.error);
       notify(`Ask failed · ${response.error.message}`, "error");
       return;
     }
+    setRecordedRecoveryAvailable(false);
     setBackendState(response.state);
     setAskResult(response.result);
     setAnswerVisible(true);
@@ -372,7 +371,7 @@ export function TanoConsole() {
     }
     setRequestState("ingesting");
     const [response] = await Promise.all([
-      callDemo<IngestResult>("ingest", {
+      callDemo<IngestResult>(demoClient, "ingest", {
         idempotencyKey: "demo-slack-update-2026-07-15-v1",
         text: INGEST_TEXT,
       }),
@@ -380,9 +379,11 @@ export function TanoConsole() {
     ]);
     if (!response.ok) {
       setRequestState("idle");
+      offerRecordedRecovery(response.error);
       notify(`Ingest failed · ${response.error.message}`, "error");
       return;
     }
+    setRecordedRecoveryAvailable(false);
     setBackendState(response.state);
     if (response.result.quarantined) {
       setRequestState("idle");
@@ -430,7 +431,7 @@ export function TanoConsole() {
         proposalIds: string[];
         approvalIds: string[];
         resolvedConflictIds: string[];
-      }>(route, {
+      }>(demoClient, route, {
         proposalId,
         reason: action === "approve"
           ? "Human operator verified all three source spans and accepted their blast radius."
@@ -438,6 +439,7 @@ export function TanoConsole() {
       });
       if (!response.ok || response.result.decision !== (action === "approve" ? "approved" : "rejected") || !response.result.proposalIds.includes(proposalId)) {
         setRequestState("idle");
+        if (!response.ok) offerRecordedRecovery(response.error);
         if (latestState) setBackendState(latestState);
         notify(
           !response.ok
@@ -450,6 +452,7 @@ export function TanoConsole() {
       latestState = response.state;
       completed.push(proposalId);
     }
+    setRecordedRecoveryAvailable(false);
     if (latestState) setBackendState(latestState);
     const nextStatus: ChangeProposal["status"] = action === "reject" ? "rejected" : "approved";
     setChanges((current) =>
@@ -477,7 +480,7 @@ export function TanoConsole() {
     }
     setRequestState("running");
     const [response] = await Promise.all([
-      callDemo<RunResult>("run-agent", {
+      callDemo<RunResult>(demoClient, "run-agent", {
         task: "Prepare the Bloom & Wild TikTok creator launch queue and fail closed on rights or delivery uncertainty.",
         mode: mode === "fresh" ? "live" : "recorded",
       }),
@@ -485,9 +488,11 @@ export function TanoConsole() {
     ]);
     if (!response.ok) {
       setRequestState("idle");
+      offerRecordedRecovery(response.error);
       notify(`Agent run failed · ${response.error.message}`, "error");
       return;
     }
+    setRecordedRecoveryAvailable(false);
     setBackendState(response.state);
     setRunResult(response.result);
     setBackendRunId(response.result.run.id);
@@ -506,14 +511,16 @@ export function TanoConsole() {
     }
     setRequestState("replaying");
     const [response] = await Promise.all([
-      callDemo<ReplayResult>("replay", { runId: baselineRunId }),
+      callDemo<ReplayResult>(demoClient, "replay", { runId: baselineRunId }),
       wait(520),
     ]);
     if (!response.ok) {
       setRequestState("idle");
+      offerRecordedRecovery(response.error);
       notify(`Replay failed · ${response.error.message}`, "error");
       return;
     }
+    setRecordedRecoveryAvailable(false);
     setBackendState(response.state);
     setReplayResult(response.result);
     markWorkflow("replayed");
@@ -528,7 +535,7 @@ export function TanoConsole() {
     }
     setRequestState("recording");
     const [response] = await Promise.all([
-      callDemo<OutcomeResult>("outcome", {
+      callDemo<OutcomeResult>(demoClient, "outcome", {
         runId: backendRunId,
         status: "measured",
         metrics: { ctrLiftPercent: 18.4, rebriefHoursSaved: 3.2 },
@@ -538,9 +545,11 @@ export function TanoConsole() {
     ]);
     if (!response.ok) {
       setRequestState("idle");
+      offerRecordedRecovery(response.error);
       notify(`Outcome failed · ${response.error.message}`, "error");
       return;
     }
+    setRecordedRecoveryAvailable(false);
     setBackendState(response.state);
     setOutcomeResult(response.result);
     markWorkflow("outcomeRecorded");
@@ -549,11 +558,13 @@ export function TanoConsole() {
   }
 
   async function resetDemo() {
-    const response = await callDemo<{ reset: boolean; message: string }>("reset");
+    const response = await callDemo<{ reset: boolean; message: string }>(demoClient, "reset");
     if (!response.ok) {
+      offerRecordedRecovery(response.error);
       notify(`Reset failed · ${response.error.message}`, "error");
       return;
     }
+    setRecordedRecoveryAvailable(false);
     setBackendState(response.state);
     setWorkflow(initialWorkflow);
     setChanges(baselineChanges);
@@ -724,7 +735,13 @@ export function TanoConsole() {
           <div className={styles.topbarActions}>
             <button
               className={styles.modeButton}
+              disabled={demoClient?.mode === "recorded"}
               onClick={() => {
+                if (demoClient?.mode === "recorded") return;
+                if (recordedRecoveryAvailable) {
+                  window.location.assign("/tano?demo=recorded");
+                  return;
+                }
                 setMode((current) => current === "recorded" ? "fresh" : "recorded");
                 notify(
                   mode === "recorded"
@@ -732,10 +749,29 @@ export function TanoConsole() {
                     : "Recorded receipt mode selected · deterministic and reproducible",
                 );
               }}
-              aria-label={`Switch from ${mode} mode`}
+              aria-label={
+                demoClient?.mode === "recorded"
+                  ? "Recorded deterministic mode"
+                  : recordedRecoveryAvailable
+                    ? "Reset into recorded deterministic mode"
+                    : `Switch from ${mode} mode`
+              }
+              title={
+                demoClient?.mode === "recorded"
+                  ? "Fresh API unavailable · replaying a versioned deterministic recording"
+                  : recordedRecoveryAvailable
+                    ? "Retry the failed action, or reset safely into the checked-in recording"
+                    : undefined
+              }
             >
               <span className={cx(styles.modeIndicator, mode === "fresh" && styles.modeLive)} />
-              {mode === "recorded" ? "Recorded receipt" : "Fresh API run"}
+              {demoClient?.mode === "recorded"
+                ? "Recorded deterministic"
+                : recordedRecoveryAvailable
+                  ? "Reset into recorded"
+                  : mode === "recorded"
+                    ? "Recorded receipt"
+                    : "Fresh API run"}
             </button>
             <button className={styles.commandButton} onClick={() => setPaletteOpen(true)}>
               Search or jump <kbd>⌘ K</kbd>

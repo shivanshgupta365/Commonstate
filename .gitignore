@@ -14,11 +14,13 @@
 /coverage
 /test-results/
 /playwright-report/
+/test-results-recorded/
+/playwright-recorded-report/
 /blob-report/
+/.lighthouseci/
 
 # next.js
 /.next/
-/.vinext/
 /out/
 
 # misc
@@ -33,6 +35,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -40,7 +43,6 @@ yarn-error.log*
 # typescript
 next-env.d.ts
 /dist/
-/.wrangler/
 /outputs/
 /work/
 /.playwright-cli/

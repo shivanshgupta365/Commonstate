@@ -62,14 +62,17 @@ Sources -> Evidence ledger -> Truth engine -> Context compiler
    -> Humans and agents -> Receipts and outcomes -> Evidence ledger
 ```
 
-The shipped vertical slice uses Next.js/Vinext, TypeScript, Cloudflare-compatible
-Workers output, D1/Drizzle persistence, and a deterministic provider. A
-memory-backed fallback keeps local development usable without external
-credentials; `/api/demo/state` reports the active storage mode.
+The shipped product is a native Next.js 16 App Router application with TypeScript,
+React 19, Drizzle, and Supabase Postgres. It builds with `next build`, runs with
+`next start`, deploys normally to Vercel, and also runs on any Node 22 host.
 
-The production direction is NestJS, Postgres/Supabase, pgvector, LangGraph,
-Gemini structured outputs, and authenticated Streamable HTTP MCP. The demo
-already exposes the same tool contract through a POST JSON-RPC endpoint:
+The 17-table relational model uses JSONB, native booleans, timezone-aware
+timestamps, workspace indexes, and foreign-key constraints. Every workspace
+mutation is one PostgreSQL transaction. Optimistic compare-and-swap rejects a
+stale writer before any dependent row is committed, and deterministic query
+ordering keeps context hashes, receipts, and replay reproducible.
+
+The product exposes the shared agent contract through a POST JSON-RPC endpoint:
 
 ```text
 get_context_pack(task, entity_refs, as_of?)
@@ -79,6 +82,39 @@ request_approval(proposal_ids, reason)
 record_outcome(run_id, status, metrics, notes)
 ```
 
+At runtime, `DATABASE_URL` points to the Supabase transaction pooler and prepared
+statements are disabled for pooler compatibility. `MIGRATION_DATABASE_URL` is
+used by Drizzle for schema changes. `/api/state` and `/api/demo/state` report
+`state.meta.mode` as `"postgres"` or `"memory-local"`.
+
+Process memory is allowed only in local development and tests. In production,
+missing, failed, or timed-out storage returns HTTP `503` with error code
+`STORAGE_UNAVAILABLE`; the server never silently places operational state in
+instance memory.
+
+### Fresh and recorded operation
+
+The console talks through a provider-neutral `DemoClient` boundary:
+
+- `ApiDemoClient` uses the live `/api/demo/*` contract.
+- `RecordedDemoClient` uses the versioned
+  `public/demo/recorded-tano-v1.json` fixture.
+
+The browser first attempts live state with a bounded timeout. A network failure,
+timeout, or storage `503` loads the recording and pins that console session to
+**Recorded deterministic**. Validation, permission, and domain failures do not
+trigger fallback, and a failed live mutation never silently changes mode.
+Open `/tano?demo=recorded` to intentionally skip the live API and start directly
+from the recording. After a recoverable live-mutation failure, the existing mode
+control offers this explicit reset while leaving retry available.
+
+Recorded mode implements ask, ingest, approve, reject, agent run, replay,
+outcome, and reset. It accepts only the inputs declared by the recording; other
+questions receive an explicit “not included in this recording” result. The
+fixture is generated from pure domain functions, carries a schema version,
+generator version, fixture hash, and 24/24 eval result, and is verified before
+use.
+
 In production, anonymous browser workspace identity comes from a random
 256-bit `HttpOnly`, `Secure`, `SameSite=Lax` session cookie. Header, query, and
 body workspace selectors are ignored outside local/test hosts. Agent writes
@@ -86,70 +122,133 @@ also enforce actor activity, permission, and write budget.
 
 ## API surface
 
-| Method | Route | Purpose |
-| --- | --- | --- |
-| GET | `/api/demo/state` | Current isolated workspace projection |
-| POST | `/api/demo/reset` | Restore the deterministic demo seed |
-| POST | `/api/demo/ask` | Compile a cited, task-aware answer |
-| POST | `/api/demo/ingest` | Add an untrusted source event and proposals |
-| POST | `/api/demo/approve` | Human-approve proposed truth |
-| POST | `/api/demo/reject` | Reject proposed truth |
-| POST | `/api/demo/run-agent` | Produce dry-run actions and a receipt |
-| POST | `/api/demo/replay` | Compare the same run across context versions |
-| POST | `/api/demo/outcome` | Record an outcome and propose a learning |
-| POST | `/api/demo/mcp` | MCP-style JSON-RPC `initialize`, `tools/list`, `tools/call` |
+The same 11-operation contract is available under both `/api` and `/api/demo`,
+for 22 route paths in total:
 
-All mutations return `{ ok, action, result, state }`. The console advances only
-after a successful API result and renders the returned evidence, proposals,
-agent run, replay, outcome, and eval data.
+| Method | Suffix | Purpose |
+| --- | --- | --- |
+| GET | `/state` | Current isolated workspace projection |
+| POST | `/reset` | Restore the deterministic demo seed |
+| POST | `/ask` | Compile a cited, task-aware answer |
+| POST | `/ingest` | Add an untrusted source event and proposals |
+| POST | `/update` | Compatibility alias for `/ingest` |
+| POST | `/approve` | Human-approve proposed truth |
+| POST | `/reject` | Reject proposed truth |
+| POST | `/run-agent` | Produce dry-run actions and a receipt |
+| POST | `/replay` | Compare the same run across context versions |
+| POST | `/outcome` | Record an outcome and propose a learning |
+| POST | `/mcp` | JSON-RPC `initialize`, `tools/list`, and `tools/call` |
+
+State success is `{ ok, state }`; mutation success is `{ ok, action, result,
+state }`; failures are `{ ok: false, error: { code, message } }`. All JSON
+responses use `Cache-Control: no-store`, request bodies are capped at 64KB, and
+the two prefixes preserve the same status codes and alias behavior. The MCP
+endpoint speaks JSON-RPC 2.0 with protocol version `2025-06-18` and exposes all
+five tools listed above.
+
+The console advances only after a successful result and renders the returned
+evidence, proposals, agent run, replay, outcome, and eval data.
 
 ## Repository map
 
 - `app/` — product routes and API handlers
 - `components/landing/` — Commonstate product story and interactive preview
 - `components/console/` — Tano operating console and guided workflow
-- `db/` and `drizzle/` — normalized D1 schema and generated migration
+- `db/` and `drizzle/` — normalized PostgreSQL schema and generated migration
 - `lib/commonstate/` — truth, context, receipt, eval, and persistence domain
+- `public/demo/` — versioned deterministic recording served by this application
+- `scripts/generate-recorded-fixture.ts` — pure-domain recording generator
 - `docs/` — architecture, threat model, ADRs, outreach, and demo script
-- `tests/` — domain/API/rendered tests plus Playwright browser flows
-- `.github/workflows/ci.yml` — lint, typecheck, build, tests, and browser CI
+- `tests/` — domain, route, PostgreSQL, performance, and browser contracts
+- `.github/workflows/ci.yml` — quality, storage, live/recorded browser, and
+  Lighthouse release gates
 
 ## Run locally
 
 Requires Node.js 22.13 or newer.
 
+For the full persistent product, copy the environment template and replace the
+placeholder Supabase URLs:
+
 ```bash
+cp .env.example .env
+# Replace the placeholder URLs in .env, then:
 npm install
+npm run db:migrate
 npm run dev
 ```
 
-Open `http://localhost:3000` and enter the Tano Edition. Local development
-defaults to isolated in-memory persistence when D1 and its migration are not
-available. Inspect `state.meta.mode` from `/api/demo/state` to confirm the mode.
+The variables are:
+
+| Variable | Use |
+| --- | --- |
+| `DATABASE_URL` | Supabase transaction-pooler URL used by the application |
+| `MIGRATION_DATABASE_URL` | Direct or session-pooler URL used only by Drizzle |
+| `NEXT_PUBLIC_SITE_URL` | Canonical public origin for metadata and social cards |
+| `POSTGRES_POOL_MAX` | Optional per-instance connection cap; defaults to `3` |
+
+Open `http://localhost:3000` and enter the Tano Edition. Inspect
+`state.meta.mode` from `/api/demo/state` to confirm `"postgres"`.
+
+For UI work without credentials, `npm run dev` intentionally uses isolated
+`"memory-local"` storage. That behavior is unavailable in a normal production
+process.
 
 Generate a new migration after changing `db/schema.ts`:
 
 ```bash
 npm run db:generate
+npm run db:migrate
 ```
+
+Apply `npm run db:migrate` a second time to verify the migration is idempotent.
+
+### Vercel deployment
+
+1. Set `DATABASE_URL`, `NEXT_PUBLIC_SITE_URL`, and optionally
+   `POSTGRES_POOL_MAX` in the Vercel project.
+2. Apply migrations separately with `MIGRATION_DATABASE_URL`.
+3. Keep the standard build command `npm run build`; no custom output adapter is
+   required.
+4. After deployment, open `/api/state` over HTTPS and verify
+   `state.meta.mode === "postgres"` before promoting the release.
+
+Do not set `COMMONSTATE_TEST_MEMORY` in a deployed environment. It exists only
+for automated production-server tests.
 
 ## Verify
 
 ```bash
 npm run lint
 npm run typecheck
+npm run build
 npm test
+npm run demo:record
+git diff --exit-code -- public/demo/recorded-tano-v1.json
 npm run playwright:install
 npm run test:e2e
+npx --no-install playwright test --config playwright.recorded.config.ts
+npx --no-install lhci autorun --config lighthouserc.cjs
 ```
 
-The release suite currently passes:
+To run the durable-storage contracts against a local PostgreSQL or Supabase test
+database:
 
-- 52 deterministic Node tests
+```bash
+npm run db:migrate
+node --test tests/postgres-repository.test.mjs tests/api.test.mjs tests/performance.test.mjs
+```
+
+The release gates cover:
+
+- all 22 native route paths and both prefix families
+- seed, mutation, reset, idempotency, rollback, and stale concurrent writes
+- live and zero-live-API recorded versions of the complete workflow, including
+  reject and reset branches
+- two-browser workspace isolation, 64KB bodies, cookies, and selector rejection
+- keyboard, reduced-motion, 390px, Axe, and Lighthouse checks
+- 50 successful warm PostgreSQL context-pack requests with p95 below 750ms
 - 24 executed domain-v2 acceptance invariants
-- 4 Chromium product flows, including the complete six-step proof and 390px mobile
-- 100/100 Lighthouse accessibility and best practices on `/` and `/tano`
-- 7.0ms local p95 for the seeded state endpoint across 30 requests
 
 The eval suite recomputes results from state invariants. Provenance tampering
 causes a real failure; no acceptance result is seeded as `passed: true`.
@@ -164,8 +263,10 @@ causes a real failure; no acceptance result is seeded as `passed: true`.
 - Consequential actions remain dry-run and human-gated.
 - The deterministic provider reports zero model tokens and zero model cost.
 - Demo reset intentionally replaces that browser's isolated workspace history.
-- The D1 path is built and migration-tested, but this repository's local CI does
-  not claim a live hosted-D1 integration test.
+- Production storage failures return `503 STORAGE_UNAVAILABLE`; no server-instance
+  memory fallback is used.
+- Recorded mode is visibly labelled, verifies its fixture hash, and rejects
+  unsupported inputs instead of presenting canned evidence as fresh output.
 
 Tano's public docs state that live campaign data is not publicly self-serve and
 outbound webhooks are not currently emitted, so this concept never implies

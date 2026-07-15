@@ -49,14 +49,19 @@ function response(body: unknown, init?: ResponseInit, setCookie?: string): Respo
 }
 
 async function readPayload(request: Request): Promise<JsonObject> {
+  const maxBytes = 64 * 1024;
   const contentLength = Number(request.headers.get("content-length") ?? "0");
-  if (contentLength > 64 * 1024) {
+  if (contentLength > maxBytes) {
     throw new DomainError("PAYLOAD_TOO_LARGE", "request body must be 64KB or smaller", 413);
   }
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) return {};
   try {
-    const payload: unknown = await request.json();
+    const raw = await request.text();
+    if (new TextEncoder().encode(raw).byteLength > maxBytes) {
+      throw new DomainError("PAYLOAD_TOO_LARGE", "request body must be 64KB or smaller", 413);
+    }
+    const payload: unknown = JSON.parse(raw);
     if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
       throw new DomainError("INVALID_JSON", "request body must be a JSON object");
     }

@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 const WORKSPACE = "demo-tano";
 const workspaceHeaders = {
@@ -6,12 +7,32 @@ const workspaceHeaders = {
   "x-commonstate-workspace": WORKSPACE,
 };
 
+async function expectNoSeriousAccessibilityViolations(page: Page, surface: string) {
+  const result = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const blocking = result.violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical",
+  );
+  expect(
+    blocking,
+    `${surface} accessibility violations:\n${blocking
+      .map((violation) => `${violation.id}: ${violation.help} (${violation.nodes.length} nodes)`)
+      .join("\n")}`,
+  ).toEqual([]);
+}
+
 async function resetWorkspace(request: APIRequestContext) {
   const response = await request.post("/api/demo/reset", {
     headers: workspaceHeaders,
     data: { workspace: WORKSPACE },
   });
   expect(response.ok(), `reset returned ${response.status()}`).toBeTruthy();
+  const expectedStorageMode = process.env.COMMONSTATE_EXPECT_STORAGE_MODE;
+  if (expectedStorageMode) {
+    const payload = await response.json();
+    expect(payload.state?.meta?.mode).toBe(expectedStorageMode);
+  }
 }
 
 async function clickAndWaitForApi(
@@ -148,6 +169,81 @@ test("reset restores the isolated deterministic workspace", async ({ page }) => 
     }),
   ).toBeVisible();
   await expect(main.getByText("Operator update ready to ingest")).toBeVisible();
+});
+
+test("a failed live mutation stays pinned and offers an explicit recorded reset", async ({ page }) => {
+  await page.goto("/tano");
+  const main = page.locator("#workspace-main");
+  await page.getByRole("button", { name: "Start the 90-second proof" }).click();
+  await page.route("**/api/demo/ask", (route) => route.abort("failed"));
+
+  await main.getByRole("button", { name: /^Ask Commonstate/ }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Ask failed" })).toBeVisible();
+  const recovery = page.getByRole("button", {
+    name: "Reset into recorded deterministic mode",
+  });
+  await expect(recovery).toBeVisible();
+  await expect(page).not.toHaveURL(/demo=recorded/);
+
+  await recovery.click();
+  await expect(page).toHaveURL(/\/tano\?demo=recorded$/);
+  await expect(
+    page.getByRole("button", { name: "Recorded deterministic mode" }),
+  ).toBeDisabled();
+});
+
+test("keyboard navigation, command palette, and evidence dialog remain operable", async ({ page }) => {
+  await page.goto("/tano");
+  const main = page.locator("#workspace-main");
+  const overviewTab = page.getByRole("tab", { name: /Overview/ });
+
+  await overviewTab.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("tab", { name: /Change inbox/ })).toBeFocused();
+  await expect(main.getByRole("heading", { level: 1, name: "Change Inbox" })).toBeVisible();
+
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await expect(palette).toBeVisible();
+  await palette.getByPlaceholder("Search surfaces and commands…").fill("Replay");
+  await palette.getByRole("button", { name: /Replay/ }).click();
+  await expect(main.getByRole("heading", { level: 1, name: "Replay decisions" })).toBeVisible();
+
+  await page.getByRole("tab", { name: /Overview/ }).click();
+  await main.getByRole("button", { name: /Sources/ }).click();
+  const evidenceDialog = page.getByRole("dialog", { name: /Claim source/ });
+  await expect(evidenceDialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(evidenceDialog).toBeHidden();
+});
+
+test("landing and every console surface have no serious WCAG A or AA violations", async ({ page }) => {
+  // Scan the stable reduced-motion presentation. The console's 260 ms view
+  // entrance fades otherwise blend every text color with its background while
+  // axe samples the first frame, producing transient contrast false positives.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { level: 1, name: /Every human\. Every agent\. Same state\./ }),
+  ).toBeVisible();
+  await expectNoSeriousAccessibilityViolations(page, "landing");
+
+  await page.goto("/tano");
+  await expect(page.getByRole("button", { name: "Start the 90-second proof" })).toBeVisible();
+  await expectNoSeriousAccessibilityViolations(page, "console/overview");
+
+  for (const surface of [
+    "Change inbox",
+    "Memory map",
+    "Ask Commonstate",
+    "Agent console",
+    "Replay",
+    "Evals",
+  ]) {
+    await page.getByRole("tab", { name: new RegExp(surface, "i") }).click();
+    await expect(page.locator("#workspace-main [role='tabpanel']")).toBeVisible();
+    await expectNoSeriousAccessibilityViolations(page, `console/${surface}`);
+  }
 });
 
 test.describe("mobile smoke", () => {
