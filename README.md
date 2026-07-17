@@ -4,6 +4,21 @@
 
 ![Commonstate social preview](public/og.png)
 
+## Product launch film
+
+[![Commonstate — Tano Product Launch Film](public/product-showcase/commonstate-tano-launch-poster.png)](public/product-showcase/commonstate-tano-launch-1080p.mp4)
+
+[Watch or download the 75-second 1080p product launch film](public/product-showcase/commonstate-tano-launch-1080p.mp4)
+
+The film shows why Tano's long-running creator agents need shared current
+state across briefs, rights, deliverables, payments, and performance. It then
+demonstrates cited decisions, versioned truth, blast radius, human-gated agent
+action, temporal replay, and the same governed core applied beyond Tano.
+
+The Tano Edition is independent and unofficial. It uses public Tano facts and
+visibly synthetic Commonstate records; it does not imply access to private Tano
+campaign data.
+
 Commonstate is an operational context control plane: one living, permissioned
 truth shared by people and agents. It versions decisions, compiles the minimum
 valid context for a task, and produces a content-addressed receipt for every
