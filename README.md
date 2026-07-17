@@ -6,9 +6,13 @@
 
 ## Product launch film
 
-[![Commonstate — Tano Product Launch Film](public/product-showcase/commonstate-tano-launch-poster.png)](public/product-showcase/commonstate-tano-launch-1080p.mp4)
+![Commonstate — Tano Product Launch Film](public/product-showcase/commonstate-tano-launch-poster.png)
 
-[Watch or download the 75-second 1080p product launch film](public/product-showcase/commonstate-tano-launch-1080p.mp4)
+<details>
+<summary><strong>▶ Play the 75-second product launch film</strong></summary>
+<br>
+<img src="public/product-showcase/commonstate-tano-launch-inline.gif" alt="Commonstate Tano product launch film" width="960">
+</details>
 
 The film shows why Tano's long-running creator agents need shared current
 state across briefs, rights, deliverables, payments, and performance. It then
