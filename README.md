@@ -4,7 +4,13 @@
 
 ## Product film
 
-[Watch the current Commonstate product launch film (1080p · 30fps)](public/product-showcase/commonstate-product-launch-1080p-30fps.mp4)
+![Commonstate product launch film](public/product-showcase/commonstate-product-launch-poster.png)
+
+<details>
+<summary><strong>▶ Play the 75-second Commonstate product film</strong></summary>
+<br>
+<img src="public/product-showcase/commonstate-product-launch-inline.gif" alt="Commonstate product launch film" width="960">
+</details>
 
 Commonstate is an operational-context control plane for companies using people
 and AI agents together. It turns changing company activity into permissioned,
