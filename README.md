@@ -1,9 +1,5 @@
 # Commonstate
 
-> **Every human. Every agent. Same state.**
-
-![Commonstate social preview](public/og.png)
-
 ![Commonstate architecture — humans and agents acting from the same verified state](public/commonstate-architecture.png)
 
 Commonstate is an operational-context control plane for companies using people
