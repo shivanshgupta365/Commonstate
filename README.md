@@ -2,6 +2,10 @@
 
 ![Commonstate architecture — humans and agents acting from the same verified state](public/commonstate-architecture.png)
 
+## Product film
+
+[Watch the current Commonstate product launch film (1080p · 30fps)](public/product-showcase/commonstate-product-launch-1080p-30fps.mp4)
+
 Commonstate is an operational-context control plane for companies using people
 and AI agents together. It turns changing company activity into permissioned,
 temporal claims; compiles only the valid context required for a task; applies
