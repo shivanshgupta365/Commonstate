@@ -8,6 +8,48 @@
       "when": 1784095821417,
       "tag": "0000_commonstate_postgres",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784114358864,
+      "tag": "0001_multi_company",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784114903540,
+      "tag": "0002_source_retrieval",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784115463733,
+      "tag": "0003_enforce_workspace_organization",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784115719312,
+      "tag": "0004_tenant_rls_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784116400000,
+      "tag": "0005_workos_directory_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784117000000,
+      "tag": "0006_workspace_policy_organization_guard",
+      "breakpoints": true
     }
   ]
 }

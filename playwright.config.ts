@@ -1,10 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
+const useLocalProductAuth = process.env.COMMONSTATE_E2E_LOCAL_AUTH === "true";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testIgnore: "**/*.recorded.spec.ts",
   outputDir: "test-results",
   timeout: 45_000,
   expect: { timeout: 8_000 },
@@ -18,6 +18,7 @@ export default defineConfig({
   ],
   use: {
     baseURL,
+    navigationTimeout: 15_000,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -32,13 +33,20 @@ export default defineConfig({
     ? undefined
     : {
         command: "npm run start -- --hostname 127.0.0.1 --port 3000",
-        // Local smoke runs may opt into the isolated in-process store. CI's
-        // browser-live job supplies DATABASE_URL and must fail closed if that
-        // durable store becomes unavailable instead of silently falling back.
         env: {
-          COMMONSTATE_TEST_MEMORY: process.env.DATABASE_URL ? "0" : "1",
+          ...(useLocalProductAuth
+            ? {
+                // The application still requires a loopback PostgreSQL URL
+                // and rejects this path on Vercel. Clearing CI only in the
+                // spawned localhost server lets the production build exercise
+                // the local-bootstrap principal without enabling it in a
+                // deployed environment.
+                CI: "",
+                COMMONSTATE_LOCAL_AUTH: "true",
+              }
+            : {}),
         },
-        url: `${baseURL}/api/demo/state?workspace=playwright-readiness`,
+        url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
       },

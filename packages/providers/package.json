@@ -1,0 +1,13 @@
+{
+  "name": "@commonstate/providers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.111.0",
+    "@google/genai": "2.11.0",
+    "openai": "6.47.0"
+  }
+}

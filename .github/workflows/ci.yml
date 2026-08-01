@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  NODE_OPTIONS: --max-old-space-size=4096
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -28,7 +32,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --prefer-offline
 
       - name: Reject legacy hosted-runtime coupling
         shell: bash
@@ -43,7 +47,14 @@ jobs:
         run: npm run lint
 
       - name: Type-check
-        run: npm run typecheck
+        run: |
+          npm run typecheck
+          npm run typecheck:workspaces
+
+      - name: Validate dedicated deployment plan
+        run: |
+          npm run --silent deploy:dedicated:verify > /tmp/commonstate-dedicated-plan.json
+          node -e 'const p=require("/tmp/commonstate-dedicated-plan.json"); if(!/^[a-f0-9]{64}$/.test(p.manifestHash)||!/^[a-f0-9]{64}$/.test(p.planHash)||p.phases.length!==5) process.exit(1)'
 
   node-contracts:
     needs: quality
@@ -61,13 +72,13 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --prefer-offline
 
       - name: Build native Next production output
         run: npm run build
 
-      - name: Run domain, route, API, and rendered-page contracts
-        run: node --test tests/*.test.mjs
+      - name: Run platform, product, storage, and identity contracts
+        run: npm run test:contracts
 
   postgres-integration:
     needs: quality
@@ -75,11 +86,14 @@ jobs:
     timeout-minutes: 20
     env:
       DATABASE_URL: postgresql://commonstate:commonstate@127.0.0.1:5432/commonstate_test
+      MIGRATION_DATABASE_URL: postgresql://commonstate:commonstate@127.0.0.1:5432/commonstate_test
+      PRODUCT_DATABASE_URL: postgresql://commonstate_runtime:commonstate_runtime_ci@127.0.0.1:5432/commonstate_test
+      COMMONSTATE_CREDENTIAL_PEPPER: ci-product-credential-pepper
       COMMONSTATE_EXPECT_STORAGE_MODE: postgres
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: commonstate_test
           POSTGRES_USER: commonstate
@@ -103,18 +117,31 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --prefer-offline
 
       - name: Apply Postgres migrations
         run: |
           npm run db:migrate
           npm run db:migrate
 
+      - name: Install and verify the restricted runtime role
+        shell: bash
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f drizzle/runtime-role.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "ALTER ROLE commonstate_runtime LOGIN PASSWORD 'commonstate_runtime_ci'"
+          test "$(psql "$PRODUCT_DATABASE_URL" -Atc 'select current_user')" = "commonstate_runtime"
+          test "$(psql "$DATABASE_URL" -Atc "select rolbypassrls from pg_roles where rolname = 'commonstate_runtime'")" = "f"
+          test "$(psql "$DATABASE_URL" -Atc "select rolsuper from pg_roles where rolname = 'commonstate_runtime'")" = "f"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "insert into organizations (id, slug, name) values ('ci_rls_probe_org', 'ci-rls-probe', 'CI RLS probe') on conflict (id) do nothing; insert into workspaces (id, organization_id, slug, name, edition) values ('ci_rls_probe_workspace', 'ci_rls_probe_org', 'ci-rls-probe', 'CI RLS probe', 'blank') on conflict (id) do nothing"
+          test "$(psql "$DATABASE_URL" -Atc "select count(*) from workspaces where id = 'ci_rls_probe_workspace'")" = "1"
+          test "$(psql "$PRODUCT_DATABASE_URL" -Atc "select count(*) from workspaces where id = 'ci_rls_probe_workspace'")" = "0"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "delete from organizations where id = 'ci_rls_probe_org'"
+
       - name: Build native Next production output
         run: npm run build
 
       - name: Verify contracts against durable storage
-        run: node --test tests/domain.test.mjs tests/api.test.mjs tests/rendered-html.test.mjs tests/performance.test.mjs tests/postgres-repository.test.mjs
+        run: npm run test:contracts
 
   browser-live:
     needs: [node-contracts, postgres-integration]
@@ -122,11 +149,15 @@ jobs:
     timeout-minutes: 25
     env:
       DATABASE_URL: postgresql://commonstate:commonstate@127.0.0.1:5432/commonstate_browser
+      MIGRATION_DATABASE_URL: postgresql://commonstate:commonstate@127.0.0.1:5432/commonstate_browser
+      PRODUCT_DATABASE_URL: postgresql://commonstate_runtime:commonstate_runtime_ci@127.0.0.1:5432/commonstate_browser
+      COMMONSTATE_CREDENTIAL_PEPPER: ci-browser-credential-pepper
+      COMMONSTATE_E2E_LOCAL_AUTH: "true"
       COMMONSTATE_EXPECT_STORAGE_MODE: postgres
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: commonstate_browser
           POSTGRES_USER: commonstate
@@ -150,10 +181,21 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --prefer-offline
 
       - name: Apply Postgres migrations
         run: npm run db:migrate
+
+      - name: Install and verify the restricted runtime role
+        shell: bash
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f drizzle/runtime-role.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "ALTER ROLE commonstate_runtime LOGIN PASSWORD 'commonstate_runtime_ci'"
+          test "$(psql "$PRODUCT_DATABASE_URL" -Atc 'select current_user')" = "commonstate_runtime"
+          test "$(psql "$DATABASE_URL" -Atc "select rolbypassrls from pg_roles where rolname = 'commonstate_runtime'")" = "f"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "insert into organizations (id, slug, name) values ('ci_rls_probe_org', 'ci-rls-probe', 'CI RLS probe') on conflict (id) do nothing; insert into workspaces (id, organization_id, slug, name, edition) values ('ci_rls_probe_workspace', 'ci_rls_probe_org', 'ci-rls-probe', 'CI RLS probe', 'blank') on conflict (id) do nothing"
+          test "$(psql "$PRODUCT_DATABASE_URL" -Atc "select count(*) from workspaces where id = 'ci_rls_probe_workspace'")" = "0"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "delete from organizations where id = 'ci_rls_probe_org'"
 
       - name: Build native Next production output
         run: npm run build
@@ -162,7 +204,7 @@ jobs:
         run: npm run playwright:install
 
       - name: Run live browser workflows
-        run: npx --no-install playwright test --config playwright.config.ts
+        run: npm run test:e2e:live
 
       - name: Upload live browser artifacts
         if: ${{ !cancelled() }}
@@ -172,45 +214,6 @@ jobs:
           path: |
             playwright-report/
             test-results/
-          if-no-files-found: ignore
-          retention-days: 7
-
-  browser-recorded:
-    needs: node-contracts
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build native Next production output and bundled recording
-        run: npm run build
-
-      - name: Install Chromium
-        run: npm run playwright:install
-
-      - name: Run recorded no-API workflows
-        run: npx --no-install playwright test --config playwright.recorded.config.ts
-
-      - name: Upload recorded browser artifacts
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-recorded
-          path: |
-            playwright-recorded-report/
-            test-results-recorded/
-            public/demo/recorded-tano-v1.json
           if-no-files-found: ignore
           retention-days: 7
 
@@ -230,7 +233,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --prefer-offline
 
       - name: Build native Next production output
         run: npm run build

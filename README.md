@@ -1,227 +1,268 @@
-# Commonstate — Tano Edition
+# Commonstate
 
 > **Every human. Every agent. Same state.**
 
 ![Commonstate social preview](public/og.png)
 
-## Product launch film
+![Commonstate architecture — humans and agents acting from the same verified state](public/commonstate-architecture.png)
 
-![Commonstate — Tano Product Launch Film](public/product-showcase/commonstate-tano-launch-poster.png)
+Commonstate is an operational-context control plane for companies using people
+and AI agents together. It turns changing company activity into permissioned,
+temporal claims; compiles only the valid context required for a task; applies
+deterministic action policy; and records an evidence-backed receipt for every
+decision.
 
-<details>
-<summary><strong>▶ Play the 75-second product launch film</strong></summary>
-<br>
-<img src="public/product-showcase/commonstate-tano-launch-inline.gif" alt="Commonstate Tano product launch film" width="960">
-</details>
+The product is built as a hosted multi-tenant SaaS and as a vendor-managed
+dedicated deployment. Its operating model is configured from data, not
+customer-specific code forks.
 
-The film shows why Tano's long-running creator agents need shared current
-state across briefs, rights, deliverables, payments, and performance. It then
-demonstrates cited decisions, versioned truth, blast radius, human-gated agent
-action, temporal replay, and the same governed core applied beyond Tano.
+## Product surfaces
 
-The Tano Edition is independent and unofficial. It uses public Tano facts and
-visibly synthetic Commonstate records; it does not imply access to private Tano
-campaign data.
+- `/` — product landing page and solution-pack switcher
+- `/login` — email, Google, and enterprise SSO entry points
+- `/setup` — seven-step workspace and ontology builder
+- `/app/[workspaceSlug]/overview` — operational truth health
+- `/app/[workspaceSlug]/inbox` — proposed-claim review
+- `/app/[workspaceSlug]/map` — entities, relationships, and evidence
+- `/app/[workspaceSlug]/ask` — cited, time-aware decisions
+- `/app/[workspaceSlug]/agents` — agent identities, tools, budgets, and receipts
+- `/app/[workspaceSlug]/replay` — historical context comparison
+- `/app/[workspaceSlug]/evals` — executable trust and safety checks
+- `/app/[workspaceSlug]/settings` — draft and publish immutable configuration
+- `/demo/[template]` — transparent, zero-API public template fixtures
 
-Commonstate is an operational context control plane: one living, permissioned
-truth shared by people and agents. It versions decisions, compiles the minimum
-valid context for a task, and produces a content-addressed receipt for every
-dry-run agent action.
+Authenticated workspaces never substitute recorded data. Public demos are
+visibly labelled synthetic and deterministic.
 
-This is an independent, unofficial Tano concept built from public Tano material
-and visibly synthetic campaign records. It uses no private Tano data and never
-contacts creators, changes contracts, moves money, or mutates campaigns.
+## Complete solution packs
 
-- [Repository](https://github.com/shivanshgupta365/commonstate-tano-edition)
-- [90-second guided proof](docs/demo-script.md) — also built directly into `/tano`
-- Live deployment: added after the first production publish
+| Pack | Scope hierarchy | Core operating objects |
+| --- | --- | --- |
+| AI Operations | Company → Team → Workflow | agents, tools, runs, incidents, policies, decisions, outcomes |
+| Enterprise Governance | Organization → Business Unit → System | policies, controls, evidence, vendors, owners, exceptions, reviews |
+| Agency Operations | Agency → Client → Engagement | briefs, assets, deliverables, approvals, vendors, campaigns, outcomes |
+| Blank | Customer-defined | validated scope, entity, predicate, metric, agent, and policy definitions |
 
-## The proof loop
+Every pack includes a versioned ontology, policy defaults, metrics, configured
+agents, a guided workflow, synthetic evidence, outcome definitions, and a
+24-case evaluation manifest. The visual builder can tailor the vocabulary,
+scope hierarchy, entities, sources, providers, approvers, risk policy,
+branding, locale, timezone, and currency before publishing configuration v1.
 
-The Tano Edition runs one complete operational workflow:
+## Why this is more than connected search
 
-1. Ask which creators can launch whitelisted TikTok ads under £15k.
-2. Inspect eligibility with literal source spans, validity, and classification.
-3. Ingest a synthetic Slack update that changes outreach, rights, and delivery state.
-4. Review every extracted proposal and resolve its visible conflicts.
-5. See the blast radius across context packs and scheduled actions.
-6. Run the dry-run Relationship Agent against newly compiled state.
-7. Inspect its context, provider, tools, approvals, actions, and receipt hash.
-8. Replay the prior run against current truth and expose the newly blocked action.
-9. Record the outcome as a proposed learning that cannot self-approve.
+Search can retrieve an old instruction. It cannot safely decide which
+instruction is current, whether the requester may use it, which policy applies,
+or whether a downstream action must stop.
 
-The product includes Overview, Change Inbox, Memory Map, Ask Commonstate, Agent
-Console, Replay, Evals, an evidence drawer, command palette, and responsive
-mobile navigation.
+Commonstate models operational knowledge as typed, temporal claims with:
 
-## Why this is not another RAG chatbot
+- immutable source hashes and literal evidence spans
+- organization, workspace, and nested-scope ownership
+- source, claim, and principal ACLs
+- author, authority, confidence, classification, and valid time
+- proposed, approved, rejected, superseded, and expired lifecycle states
+- deterministic precedence, freshness, conflict, and risk rules
+- claim-level citations in answers, context packs, actions, and replay
+- immutable ontology and policy versions bound to historical receipts
 
-Chunk retrieval can find an old brief. It cannot safely determine which of two
-instructions is current, whether a rights window has expired, who approved a
-change, or which scheduled actions must now stop.
-
-Commonstate treats operational knowledge as typed, temporal claims with:
-
-- exact source content hash and literal source span
-- company, client, and campaign scope
-- human or agent author and authority
-- observed, valid, and freshness timestamps
-- public, private, or synthetic classification
-- lifecycle and supersession history
-- task-aware context selection and claim-level citations
-- content-addressed, append-only receipts between demo resets
-
-Expired critical facts and unresolved rights, fee, whitelisting, or delivery
-conflicts fail closed for the affected action.
+Unresolved high-risk truth fails closed. Models can propose; deterministic
+policy decides what may execute.
 
 ## Architecture
 
 ```text
-Sources -> Evidence ledger -> Truth engine -> Context compiler
-   -> Humans and agents -> Receipts and outcomes -> Evidence ledger
+Slack · Drive · Teams · SharePoint · Files · Signed webhooks
+                         │
+                         ▼
+             Evidence ledger + source ACLs
+                         │
+                         ▼
+     Truth engine ── configuration + policy versions
+                         │
+                         ▼
+      Permission filters → freshness/conflict filters
+                         │
+                         ▼
+          Hybrid retrieval + context compiler
+                         │
+                 ┌───────┴────────┐
+                 ▼                ▼
+              Humans        MCP / agents
+                 └───────┬────────┘
+                         ▼
+          Actions · receipts · outcomes · audit
 ```
 
-The shipped product is a native Next.js 16 App Router application with TypeScript,
-React 19, Drizzle, and Supabase Postgres. It builds with `next build`, runs with
-`next start`, deploys normally to Vercel, and also runs on any Node 22 host.
+The repository keeps the Next.js 16 web/API application at its root and uses
+npm workspaces for shared platform packages and a Node 22 worker:
 
-The 17-table relational model uses JSONB, native booleans, timezone-aware
-timestamps, workspace indexes, and foreign-key constraints. Every workspace
-mutation is one PostgreSQL transaction. Optimistic compare-and-swap rejects a
-stale writer before any dependent row is committed, and deterministic query
-ordering keeps context hashes, receipts, and replay reproducible.
+- `app/` — native App Router pages and route handlers
+- `components/product/` — generic product, onboarding, demos, and console
+- `lib/product/` — authentication, tenancy, API, MCP, and repositories
+- `packages/configuration/` — templates, Ajv schemas, and version validation
+- `packages/policy/` — risk classification, approvals, execution, compensation
+- `packages/providers/` — Gemini, OpenAI, Anthropic, and deterministic adapters
+- `packages/connectors/` — files, webhooks, Slack, Drive, Teams, and Graph
+- `packages/observability/` — audit-chain, retention, and usage primitives
+- `apps/worker/` — PostgreSQL outbox worker with retries and dead-letter state
+- `db/` and `drizzle/` — PostgreSQL schema, RLS, migrations, and runtime role
+- `deploy/dedicated/` — validated dedicated-deployment manifest
 
-The product exposes the shared agent contract through a POST JSON-RPC endpoint:
+Runtime topology:
+
+- Vercel: Next.js web and API
+- Supabase: PostgreSQL, Auth, Storage, full-text search, and pgvector
+- Fly.io: asynchronous ingestion and connector worker
+- WorkOS: enterprise SSO and Directory Sync
+
+## Identity and tenant isolation
+
+Workspace slugs are presentation-only. Every production request constructs a
+server-owned command context from the authenticated user or service account,
+its active membership, role, and scope grants. Request bodies, route slugs,
+models, and MCP arguments cannot choose an actor or tenant.
+
+Tenant isolation is enforced twice:
+
+1. command-specific repositories apply permissions, scope grants, and ACLs;
+2. a restricted PostgreSQL runtime role is subject to row-level security.
+
+The schema uses tenant-composite foreign keys, rotating hashed service-account
+credentials, append-only audit events, idempotency records, and organization /
+workspace ownership on operational rows. Collection projections omit private
+source bodies. Directory deprovisioning immediately disables the corresponding
+membership or service account before asynchronous cleanup is queued.
+
+## Risk-tiered actions
+
+| Tier | Private-beta behavior |
+| --- | --- |
+| Low | reversible internal operation may execute once when compensation is verified |
+| Medium | waits for one authorized human approval |
+| High | waits for two authorized approvers, recent re-authentication, and connector preflight |
+| Critical | blocked |
+
+Payments, contracts, access changes, destructive deletion, and externally sent
+messages are critical by default. Workspaces also have a kill switch and
+connector-level execution controls. Every path produces a policy and execution
+receipt; retries reuse the caller's idempotency key.
+
+## Public API and MCP
+
+`/api/v1` provides authenticated, cursor-paginated resources for sessions,
+organizations, workspaces, configuration, members, roles, connectors, sources,
+claims, conflicts, approvals, context packs, agents, actions, replays, outcomes,
+usage, jobs, and audit events. Production writes require `Idempotency-Key`.
+
+The authenticated `/api/v1/mcp` endpoint accepts bearer service-account
+credentials and exposes:
 
 ```text
-get_context_pack(task, entity_refs, as_of?)
-get_evidence(claim_ids)
-propose_claim(subject_ref, predicate, value, source_ref, validity, idempotency_key)
-request_approval(proposal_ids, reason)
-record_outcome(run_id, status, metrics, notes)
+get_context_pack
+get_evidence
+propose_claim
+request_claim_approval
+propose_action
+request_action_approval
+get_action_status
+record_outcome
 ```
 
-At runtime, `DATABASE_URL` points to the Supabase transaction pooler and prepared
-statements are disabled for pooler compatibility. `MIGRATION_DATABASE_URL` is
-used by Drizzle for schema changes. `/api/state` and `/api/demo/state` report
-`state.meta.mode` as `"postgres"` or `"memory-local"`.
+## Connectors and model providers
 
-Process memory is allowed only in local development and tests. In production,
-missing, failed, or timed-out storage returns HTTP `503` with error code
-`STORAGE_UNAVAILABLE`; the server never silently places operational state in
-instance memory.
+Connector adapters implement provider authorization seams, webhook signature
+verification, cursor-based sync, deletion propagation, source ACLs, and
+idempotent writes. A connector remains visibly unconfigured until its required
+credentials and callback authorization are present; the UI never implies a
+successful live sync without them.
 
-### Fresh and recorded operation
+Provider-neutral structured-output adapters are included for Gemini, OpenAI,
+and Anthropic. Selection and fallback are workspace-scoped, deterministic demos
+use no managed model, and provider responses are validated before entering the
+truth workflow. Enterprise BYOK records reference encrypted credentials rather
+than exposing secrets to the browser or model.
 
-The console talks through a provider-neutral `DemoClient` boundary:
+## Run locally
 
-- `ApiDemoClient` uses the live `/api/demo/*` contract.
-- `RecordedDemoClient` uses the versioned
-  `public/demo/recorded-tano-v1.json` fixture.
+Requires Node.js 22 and PostgreSQL 16. A local PostgreSQL URL is required for
+authenticated product work; only the legacy demo may use its explicit test
+memory mode.
 
-The browser first attempts live state with a bounded timeout. A network failure,
-timeout, or storage `503` loads the recording and pins that console session to
-**Recorded deterministic**. Validation, permission, and domain failures do not
-trigger fallback, and a failed live mutation never silently changes mode.
-Open `/tano?demo=recorded` to intentionally skip the live API and start directly
-from the recording. After a recoverable live-mutation failure, the existing mode
-control offers this explicit reset while leaving retry available.
+```bash
+cp .env.example .env
+npm install
+npm run db:migrate
+npm run dev
+```
 
-Recorded mode implements ask, ingest, approve, reject, agent run, replay,
-outcome, and reset. It accepts only the inputs declared by the recording; other
-questions receive an explicit “not included in this recording” result. The
-fixture is generated from pure domain functions, carries a schema version,
-generator version, fixture hash, and 24/24 eval result, and is verified before
-use.
+For a local database-backed owner session, set:
 
-In production, anonymous browser workspace identity comes from a random
-256-bit `HttpOnly`, `Secure`, `SameSite=Lax` session cookie. Header, query, and
-body workspace selectors are ignored outside local/test hosts. Agent writes
-also enforce actor activity, permission, and write budget.
+```text
+DATABASE_URL=postgresql://localhost/commonstate
+PRODUCT_DATABASE_URL=postgresql://commonstate_runtime:...@localhost/commonstate
+MIGRATION_DATABASE_URL=postgresql://localhost/commonstate
+COMMONSTATE_LOCAL_AUTH=true
+COMMONSTATE_CREDENTIAL_PEPPER=<local-random-secret>
+```
 
-## API surface
+Then open [http://127.0.0.1:3000](http://127.0.0.1:3000). Production and Vercel
+deployments do not permit local bootstrap authentication.
 
-The same 11-operation contract is available under both `/api` and `/api/demo`,
-for 22 route paths in total:
+Key environment groups are documented in `.env.example`:
 
-| Method | Suffix | Purpose |
-| --- | --- | --- |
-| GET | `/state` | Current isolated workspace projection |
-| POST | `/reset` | Restore the deterministic demo seed |
-| POST | `/ask` | Compile a cited, task-aware answer |
-| POST | `/ingest` | Add an untrusted source event and proposals |
-| POST | `/update` | Compatibility alias for `/ingest` |
-| POST | `/approve` | Human-approve proposed truth |
-| POST | `/reject` | Reject proposed truth |
-| POST | `/run-agent` | Produce dry-run actions and a receipt |
-| POST | `/replay` | Compare the same run across context versions |
-| POST | `/outcome` | Record an outcome and propose a learning |
-| POST | `/mcp` | JSON-RPC `initialize`, `tools/list`, and `tools/call` |
+- database owner, restricted runtime, and migration URLs
+- Supabase browser and server credentials
+- WorkOS SSO and webhook credentials
+- managed model provider keys
+- connector OAuth, signing, and encryption credentials
+- worker, telemetry, and health settings
 
-State success is `{ ok, state }`; mutation success is `{ ok, action, result,
-state }`; failures are `{ ok: false, error: { code, message } }`. All JSON
-responses use `Cache-Control: no-store`, request bodies are capped at 64KB, and
-the two prefixes preserve the same status codes and alias behavior. The MCP
-endpoint speaks JSON-RPC 2.0 with protocol version `2025-06-18` and exposes all
-five tools listed above.
+## Database and worker
 
-The console advances only after a successful result and renders the returned
-evidence, proposals, agent run, replay, outcome, and eval data.
+Apply migrations with the owner or migration role, then install the checked-in
+restricted runtime grants:
 
-## Repository map
+```bash
+npm run db:migrate
+psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -f drizzle/runtime-role.sql
+```
 
-- `app/` — product routes and API handlers
-- `components/landing/` — Commonstate product story and interactive preview
-- `components/console/` — Tano operating console and guided workflow
-- `db/` and `drizzle/` — normalized PostgreSQL schema and generated migration
-- `lib/commonstate/` — truth, context, receipt, eval, and persistence domain
-- `public/demo/` — versioned deterministic recording served by this application
-- `scripts/generate-recorded-fixture.ts` — pure-domain recording generator
-- `docs/` — architecture, threat model, ADRs, outreach, and demo script
-- `tests/` — domain, route, PostgreSQL, performance, and browser contracts
-- `.github/workflows/ci.yml` — quality, storage, live/recorded browser, and
-  Lighthouse release gates
+Run the worker locally with:
 
-## Data, safety, and honest limits
+```bash
+npm run worker:start
+```
 
-- Public Tano evidence links to [Tano's official agent-readable documentation](https://www.tano.ai/llms-full.txt).
-- Creator and campaign operations are labelled **synthetic** in data and UI.
-- Exact stored source bytes produce each source hash; every claim span must occur in its source.
-- Retrieved instructions are quarantined as untrusted data.
-- Re-ingestion uses content hashes and idempotency keys.
-- Consequential actions remain dry-run and human-gated.
-- The deterministic provider reports zero model tokens and zero model cost.
-- Demo reset intentionally replaces that browser's isolated workspace history.
-- Production storage failures return `503 STORAGE_UNAVAILABLE`; no server-instance
-  memory fallback is used.
-- Recorded mode is visibly labelled, verifies its fixture hash, and rejects
-  unsupported inputs instead of presenting canned evidence as fresh output.
+Jobs are claimed with `FOR UPDATE SKIP LOCKED`, use bounded retries, and move to
+a dead-letter state after the configured limit. The worker exposes a health
+endpoint and supports cancellation and idempotent handlers.
 
-Tano's public docs state that live campaign data is not publicly self-serve and
-outbound webhooks are not currently emitted, so this concept never implies
-privileged integration access.
+## Verification
 
-## What I would build with Tano access
+```bash
+npm run lint
+npm run typecheck
+npm run typecheck:workspaces
+npm test
+npm run test:platform
+npm run build
+npm run playwright:install
+npm run test:e2e
+npx --no-install lhci autorun --config lighthouserc.cjs
+```
 
-1. Authenticated Slack, Drive, email, Linear, and campaign event connectors.
-2. Source ACL synchronization, deletion propagation, and freshness SLOs.
-3. Postgres/pgvector hybrid retrieval behind the deterministic compiler.
-4. OAuth-scoped MCP identities and transactional write budgets.
-5. Outcome attribution across CTR, CPA, ROAS, delivery time, and corrections.
-6. Continuous adversarial evals against Tano's real event and action schemas.
+Durable integration runs additionally set `DATABASE_URL`,
+`PRODUCT_DATABASE_URL`, and `COMMONSTATE_CREDENTIAL_PEPPER`, apply every
+migration twice, and run the PostgreSQL, RLS, concurrency, API, MCP, WorkOS,
+performance, and product workflow contracts.
 
-## Architecture decisions
+## Private-beta boundary
 
-- [Typed temporal claims over chunk-only RAG](docs/adr/0001-temporal-claims.md)
-- [Relational adjacency before a graph database](docs/adr/0002-relational-graph.md)
-
-## Application note
-
-**Subject: I built the missing context layer for Tano's agents**
-
-Your message about a shared company brain stuck with me. I built Commonstate: a
-Tano Edition where operator decisions become versioned knowledge, agents receive
-only current scoped context, and every action is cited, audited, and replayable.
-The live product includes a guided 90-second proof, and the repository contains
-the system decisions, threat model, and executable evals. I would love to show
-you what I would build next with Tano's real event stream.
+This repository implements the production private-beta application and its
+credential-gated integration seams. Customer production rollout still requires
+real Supabase, WorkOS, model-provider, connector, monitoring, encryption, and
+cloud credentials; security review; backup/restore rehearsal; and an approved
+dedicated-deployment manifest. Stripe self-serve billing, arbitrary customer
+code, customer-cloud deployment, critical external actions, and formal SOC 2
+certification are intentionally outside this milestone.

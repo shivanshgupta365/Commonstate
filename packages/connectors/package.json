@@ -1,0 +1,13 @@
+{
+  "name": "@commonstate/connectors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": {
+    "@microsoft/microsoft-graph-client": "3.0.7",
+    "@slack/web-api": "8.0.0",
+    "googleapis": "173.0.0"
+  }
+}

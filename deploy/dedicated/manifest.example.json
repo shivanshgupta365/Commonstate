@@ -1,0 +1,53 @@
+{
+  "$schema": "./manifest.schema.json",
+  "schemaVersion": 1,
+  "customer": {
+    "slug": "acme-private-beta",
+    "displayName": "Acme Private Beta",
+    "environment": "staging"
+  },
+  "region": "eu-west",
+  "domain": {
+    "hostname": "commonstate.acme.example",
+    "certificateMode": "managed"
+  },
+  "vercel": {
+    "teamId": "team_commonstate",
+    "projectName": "commonstate-acme",
+    "gitRef": "replace-with-reviewed-commit-sha",
+    "runtimeRegion": "lhr1"
+  },
+  "supabase": {
+    "organizationId": "org_commonstate",
+    "projectRef": "replace-after-provisioning",
+    "region": "eu-west-2",
+    "pointInTimeRecovery": true,
+    "storageBucket": "immutable-sources"
+  },
+  "fly": {
+    "organization": "commonstate",
+    "appName": "commonstate-acme-worker",
+    "region": "lhr",
+    "machineSize": "shared-cpu-1x",
+    "minMachines": 1,
+    "command": ["npm", "run", "worker:start"]
+  },
+  "secrets": {
+    "databaseUrl": "vault://commonstate/acme/database-url",
+    "productDatabaseUrl": "vault://commonstate/acme/product-database-url",
+    "migrationDatabaseUrl": "vault://commonstate/acme/migration-database-url",
+    "supabaseServiceRoleKey": "vault://commonstate/acme/supabase-service-role-key",
+    "encryptionKey": "vault://commonstate/acme/encryption-key"
+  },
+  "monitoring": {
+    "healthUrl": "https://commonstate.acme.example/api/health",
+    "alertChannel": "pagerduty://commonstate-acme",
+    "errorBudgetPercent": 0.1,
+    "backupCheckSchedule": "0 6 * * 1"
+  },
+  "retention": {
+    "sourceBodyDays": 365,
+    "runEventDays": 365,
+    "auditEventDays": null
+  }
+}

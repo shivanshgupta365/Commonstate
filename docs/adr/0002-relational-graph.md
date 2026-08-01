@@ -16,6 +16,6 @@ target, type, workspace, and scope columns. Keep typed claim values in JSON.
 ## Consequences
 
 - Transactions, permissions, audit events, and graph edges live in one store.
-- SQL joins are sufficient for the Tano Edition and straightforward to test.
+- SQL joins are sufficient for the current product scale and straightforward to test.
 - A dedicated graph store remains an optimization if later workloads require
   multi-hop traversal at materially larger scale.

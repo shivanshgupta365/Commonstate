@@ -1,109 +1,186 @@
 # Commonstate architecture
 
-Commonstate is an operational context control plane, not a document chatbot. It
-keeps evidence-backed operational state shared by humans and agents and records
-why each consequential decision was proposed.
+Commonstate is a configurable operational-context platform. It preserves the
+source, permission, time, policy, and configuration behind a fact so that both
+humans and agents can make safe decisions from the same current state.
 
-## Runtime flow
-
-1. Sources enter the Evidence Ledger with exact content hashes and a public,
-   private, or synthetic classification.
-2. The Truth Engine converts literal source spans into typed, temporal claims.
-3. Conflicts remain visible until a human approves, rejects, or supersedes the
-   proposed claim.
-4. The Context Compiler applies browser workspace, scope, lifecycle, temporal
-   validity, critical freshness, task predicates, and conflict filters.
-5. Agents receive the smallest matching cited pack; stale critical evidence and
-   unresolved high-risk conflicts hold the affected action.
-6. A receipt binds context, evidence, provider, model, prompts, tools, approvals,
-   cost, latency, proposed actions, holds, and timestamps into one hash.
-7. Outcomes enter the ledger as proposed learning and cannot self-approve.
+## System flow
 
 ```text
-Sources -> Evidence ledger -> Truth engine -> Context compiler
-   -> Humans and agents -> Receipts and outcomes -> Evidence ledger
+Sources → immutable evidence → proposed temporal claims → human truth workflow
+                                                │
+                                                ▼
+identity + scope grants → deterministic filters → hybrid retrieval
+                                                │
+                                                ▼
+                                   versioned context pack
+                                                │
+                                  ┌─────────────┴─────────────┐
+                                  ▼                           ▼
+                               humans                    MCP agents
+                                  └─────────────┬─────────────┘
+                                                ▼
+                         policy → approval → action receipt → outcome
+                                                │
+                                                ▼
+                                      append-only audit ledger
 ```
 
-## Shipped vertical slice
+1. Connectors normalize source events and retain provider cursors, ACLs,
+   deletions, content hashes, and idempotency keys.
+2. Extraction proposes typed claims against the active ontology version.
+3. Authorized humans approve, reject, merge, or supersede proposals.
+4. Context compilation filters by tenant, principal, scope, claim ACL,
+   lifecycle, time, freshness, and conflict before ranking.
+5. The returned context pack binds the ontology version, policy version,
+   principal, scope grants, evidence, provider, model, and tool versions.
+6. Models propose actions. Deterministic policy raises the effective risk tier
+   and decides whether execution is allowed, requires approval, or is blocked.
+7. Actions, compensation, outcomes, and replay are bound to immutable receipts.
 
-- Native Next.js 16 App Router UI and route handlers, built with `next build`
-  and served with `next start` on Node 22.
-- Drizzle `pg-core` schema and generated migration for 17 normalized Supabase
-  Postgres tables, using JSONB, native booleans, timezone-aware timestamps,
-  foreign keys, uniqueness constraints, and workspace indexes.
-- PostgreSQL persistence through Supabase's transaction pooler with prepared
-  statements disabled. `DATABASE_URL` serves application traffic;
-  `MIGRATION_DATABASE_URL` is reserved for schema changes.
-- Isolated memory persistence only in local development and tests, reported as
-  `state.meta.mode: "memory-local"`. Durable operation reports `"postgres"`.
-- Anonymous production workspaces derived from a random 256-bit `HttpOnly`,
-  `Secure`, `SameSite=Lax` cookie. Caller workspace selectors work only on
-  explicit local/test hosts.
-- One backend projection powers the console's answers, proposals, receipts,
-  replays, outcomes, and evals. Failed commands do not advance UI state.
-- A deterministic provider keeps the public proof reproducible and honestly
-  reports zero model tokens and cost.
-- JSON-RPC 2.0 MCP tools over POST for the shared agent contract.
-- A provider-neutral `DemoClient` chooses a fresh API or a checked-in,
-  deterministic recording without changing the console UI.
+## Runtime topology
 
-The anonymous cookie is an isolation mechanism for the public demonstration,
-not a substitute for enterprise authentication. The production path replaces
-it with user and agent service identities.
+The application is a native Next.js 16 App Router project on Node 22. Vercel is
+the primary web/API target, but the output runs with ordinary `next start` on
+any compatible Node host.
 
-## Persistence and consistency
+- **Vercel:** pages, authenticated REST API, MCP, auth callbacks, connector
+  callbacks, webhooks, and server-sent progress endpoints.
+- **Supabase:** PostgreSQL, Auth, private Storage, full-text search, and
+  pgvector. Runtime traffic uses a transaction pooler with prepared statements
+  disabled.
+- **Fly.io:** Node worker that claims PostgreSQL outbox jobs with
+  `FOR UPDATE SKIP LOCKED` and performs connector, extraction, and action work.
+- **WorkOS:** enterprise SSO through Supabase third-party auth and Directory
+  Sync webhook events for provisioning/deprovisioning.
 
-Every workspace mutation runs in one database transaction. The workspace row is
-updated with an optimistic version compare-and-swap before dependent records
-are persisted. A stale writer returns `409 CONCURRENT_UPDATE`, and the failed
-transaction leaves no partial sources, claims, conflicts, or events.
+Shared packages isolate customer configuration, providers, connectors, policy,
+and observability from the product UI and public deterministic fixtures.
 
-IDs and every collection query are workspace-scoped. Collection reads have
-deterministic ordering so seed hashes, context versions, receipts, and replay
-remain reproducible after a database round trip. Source events, claims,
-approvals, context evidence, runs, and outcomes are append-oriented; mutable
-lifecycle projections retain supersession history.
+## Identity and command context
 
-Opening a workspace has a provider-neutral 1.25-second storage deadline. A
-missing connection, failed query, timeout, or failed write returns HTTP `503`
-with error code `STORAGE_UNAVAILABLE` in production. Production never switches
-to process memory. Demo reset is intentionally destructive only inside the
-current browser workspace and runs transactionally.
+Every production operation begins with a user session or rotating hashed
+service-account credential. The server resolves active membership, role,
+permissions, and scope grants and constructs:
 
-## Recorded fallback
-
-```text
-Console -> DemoClient -> fresh API -> Supabase Postgres
-                    \-> versioned recording -> pure deterministic state machine
+```ts
+type CommandContext = {
+  principal: {
+    type: "user" | "service_account" | "system";
+    principalId: string;
+    actorId: string;
+  };
+  organizationId: string;
+  workspaceId: string;
+  allowedScopeIds: string[];
+  permissions: string[];
+  authenticatedAt: string | null;
+  requestId: string;
+  clock: Clock;
+};
 ```
 
-`ApiDemoClient` first requests `/api/demo/state` with a bounded browser timeout.
-Only a network failure, timeout, or storage `503` selects
-`RecordedDemoClient`; validation, permission, and domain errors remain visible.
-Once selected, the mode is pinned for the current console session. A failure
-after a successful live mutation offers retry/reset instead of silently changing
-the source of truth.
+The URL slug only locates a candidate membership. It never grants access.
+Request bodies, query parameters, connector payloads, model output, and MCP
+arguments cannot replace the actor, organization, workspace, or scope grants.
 
-`/tano?demo=recorded` is the explicit zero-live-API entry point. It loads the
-static versioned fixture directly; the same route is offered as an intentional
-reset after a recoverable live mutation failure.
+Supabase SSR session rotation happens in `proxy.ts`; API authorization still
+uses a fresh verified user lookup so revocation is observed. Production and
+Vercel deployments cannot enable local bootstrap authentication.
 
-The checked-in recording supports the complete ask, ingest, approve/reject,
-agent, replay, outcome, and reset workflow without live API calls. It declares
-its accepted question and workflow inputs; anything else returns an explicit
-“not included in this recording” response. The fixture generator invokes pure
-domain functions, not a deployed server, and records schema, generator, fixture
-hash, and 24/24 eval metadata.
+## Tenant-safe persistence
 
-## API boundary
+Product repositories are command-specific and paginated; they do not load and
+rewrite a whole workspace. A mutation runs in one transaction, installs
+transaction-local organization/workspace/principal settings, performs an
+optimistic version check when required, writes domain state, idempotency,
+usage, audit, and outbox records, then commits atomically.
 
-The canonical `/api/*` family and browser-oriented `/api/demo/*` family expose
-the same 11 operations: state, reset, ask, ingest, update, approve, reject,
-run-agent, replay, outcome, and MCP. This is a 22-path contract. `update` remains
-an alias of `ingest`; both families preserve envelopes, errors, status codes,
-64KB request limits, and `Cache-Control: no-store`.
+PostgreSQL is an independent tenant boundary:
 
-The deployment target is Vercel, but the runtime has no host-specific adapter
-and can run on any Node 22 platform. Future authenticated connectors, hybrid
-vector/lexical retrieval, long-running graphs, and model providers can sit
-behind the existing deterministic domain and MCP boundaries.
+- operational rows carry organization and workspace IDs;
+- composite foreign keys prevent mismatched tenant relationships;
+- the runtime connection uses a `NOBYPASSRLS`, non-owner role;
+- row-level policies read only transaction-local server context;
+- negative tests execute as the actual runtime role;
+- owner/migration credentials are never used by product repositories.
+
+Collection APIs expose metadata projections. Private source bodies are returned
+only through evidence endpoints after permission, scope, and ACL checks.
+
+## Configuration versions
+
+The visual builder produces validated JSON rather than executable customer
+code. Zod validates static API shapes; Ajv validates customer-defined JSON
+Schemas without coercion, defaults, or unknown-key removal.
+
+A workspace configuration includes branding, terminology, scope-kind rules,
+entity definitions, predicate schemas, precedence, freshness, conflicts,
+approval policy, agent/tool access, metrics, workflows, and evaluations.
+Changes are saved as drafts. Publishing creates an immutable ontology/policy
+version and invalidates affected current context packs. Historical receipts
+continue to replay with the versions under which they were created.
+
+## Retrieval and evidence
+
+Source bytes belong in a private Supabase Storage bucket. PostgreSQL stores the
+object path, hash, classification, source metadata, extracted text, ACLs,
+chunks, lexical vector, and optional embedding.
+
+Context compilation orders its work deliberately:
+
+1. organization/workspace and principal authorization
+2. allowed scope and source/claim ACLs
+3. approved lifecycle, temporal validity, freshness, and supersession
+4. unresolved conflict and action-risk filters
+5. PostgreSQL full-text and pgvector ranking
+6. deterministic ordering and context hashing
+
+Filtering before ranking prevents an embedding hit from bypassing access or
+validity rules.
+
+## Connectors and asynchronous work
+
+The provider-neutral connector contract covers file upload, HMAC webhooks,
+Slack, Google Drive, Microsoft Teams, and SharePoint/OneDrive. Adapters retain
+authorization state, monotonic cursors, provider event IDs, ACL replacement,
+deletion tombstones, and normalized delivery hashes.
+
+The web transaction enqueues durable jobs. The worker owns bounded retries,
+exponential backoff, dead-letter state, cancellation, and health reporting.
+Handlers are idempotent and must re-check the workspace kill switch and
+connector execution state immediately before an external side effect.
+
+## Provider and action boundaries
+
+Gemini, OpenAI, and Anthropic implement one validated structured-output
+interface. Workspace selection, fallback order, secret resolution, source-hash
+cache keys, and configuration versions remain outside model control. Public
+demos use an explicit deterministic provider.
+
+Action risk is assigned deterministically:
+
+- low: reversible internal operation with verified compensation
+- medium: one authorized human approval
+- high: two independent approvals, recent re-authentication, preflight, and
+  explicit execution
+- critical: blocked during private beta
+
+Every proposal, approval, preflight, attempt, compensation result, and outcome
+is auditable and idempotent.
+
+## Public demonstrations and compatibility
+
+`/demo/[template]` uses checked-in synthetic fixtures and performs no production
+API request. Authenticated `/app/*` surfaces never fall back to a recording or
+anonymous fixture.
+
+The demonstration clock exists only in fixture/domain code. Production command
+contexts use an injectable real UTC clock.
+
+## Deployment models
+
+Hosted SaaS and vendor-managed dedicated deployments use the same commit,
+migrations, configuration schema, and worker. A dedicated deployment receives
+separate Vercel, Supabase, Fly.io, domain, encryption keys, secrets, monitoring,
+backup, and restore boundaries. Customer-specific code forks are prohibited.
