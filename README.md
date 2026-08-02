@@ -51,8 +51,7 @@
 ## Product workflow
 
 Six views from the recorded AI Operations fixture show how Commonstate moves
-from changing source evidence to a governed, reproducible agent decision. The
-fixture uses synthetic data and performs no live external actions.
+from changing source evidence to a governed, reproducible agent decision. 
 
 <table>
   <tr>
