@@ -27,6 +27,7 @@
 
 <p>
   <a href="#product-film">Product film</a> ·
+  <a href="#product-workflow">Product workflow</a> ·
   <a href="#product-surfaces">Product surfaces</a> ·
   <a href="#complete-solution-packs">Solution packs</a> ·
   <a href="#architecture">Architecture</a> ·
@@ -46,6 +47,51 @@
 [![Play the Commonstate product film](public/product-showcase/commonstate-product-launch-poster.png)](https://cdn.jsdelivr.net/gh/shivanshgupta365/Commonstate@main/public/product-showcase/commonstate-product-launch-1080p-30fps.mp4)
 
 **[▶ Play the 75-second Commonstate product film with sound](https://cdn.jsdelivr.net/gh/shivanshgupta365/Commonstate@main/public/product-showcase/commonstate-product-launch-1080p-30fps.mp4)**
+
+## Product workflow
+
+Six views from the recorded AI Operations fixture show how Commonstate moves
+from changing source evidence to a governed, reproducible agent decision. The
+fixture uses synthetic data and performs no live external actions.
+
+<table>
+  <tr>
+    <td width="50%">
+      <strong>01 · Observe shared state</strong><br>
+      <a href="public/product-workflow/01-overview.png"><img src="public/product-workflow/01-overview.png" alt="Commonstate AI Operations overview showing context health, active agents, incidents, and cited decisions" width="100%"></a><br>
+      <sub>Monitor context health, incidents, proposed changes, and cited decisions from one operational view.</sub>
+    </td>
+    <td width="50%">
+      <strong>02 · Review and propagate</strong><br>
+      <a href="public/product-workflow/02-change-approved.png"><img src="public/product-workflow/02-change-approved.png" alt="Commonstate Change Inbox approving and propagating an evidence-backed operational claim" width="100%"></a><br>
+      <sub>A human reviews the evidence, blast radius, and exact claim diff before approving shared truth.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <strong>03 · Compile a cited decision</strong><br>
+      <a href="public/product-workflow/03-cited-decision.png"><img src="public/product-workflow/03-cited-decision.png" alt="Commonstate cited decision showing eligible, review, and blocked agents" width="100%"></a><br>
+      <sub>Compile only current, permitted context and make eligibility, review, and blocked states explicit.</sub>
+    </td>
+    <td width="50%">
+      <strong>04 · Inspect exact evidence</strong><br>
+      <a href="public/product-workflow/04-evidence-ledger.png"><img src="public/product-workflow/04-evidence-ledger.png" alt="Commonstate evidence ledger showing policy source, timestamp, author, and immutable hash" width="100%"></a><br>
+      <sub>Open the policy source, observed time, author, excerpt, and immutable hash behind a result.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <strong>05 · Run within policy</strong><br>
+      <a href="public/product-workflow/05-agent-receipt.png"><img src="public/product-workflow/05-agent-receipt.png" alt="Commonstate agent console showing scoped agents and an immutable execution receipt" width="100%"></a><br>
+      <sub>Resolve identity, compile minimal context, apply risk policy, and preserve an immutable receipt.</sub>
+    </td>
+    <td width="50%">
+      <strong>06 · Replay changed truth</strong><br>
+      <a href="public/product-workflow/06-temporal-replay.png"><img src="public/product-workflow/06-temporal-replay.png" alt="Commonstate temporal replay comparing original and current operational context" width="100%"></a><br>
+      <sub>Compare what the agent knew then with current state and turn unsafe changes into explicit holds.</sub>
+    </td>
+  </tr>
+</table>
 
 Commonstate is an operational-context control plane for companies using people
 and AI agents together. It turns changing company activity into permissioned,
