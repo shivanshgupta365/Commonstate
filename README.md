@@ -1,4 +1,43 @@
-# Commonstate
+<div align="center">
+
+<h1>
+  <img src="public/favicon.svg" width="52" alt="Commonstate mark"><br>
+  Commonstate
+</h1>
+
+### The governed operational context control plane for people and AI agents
+
+*Compile current truth. Enforce action policy. Preserve an evidence-backed receipt for every decision.*
+
+<p>
+  <img src="https://img.shields.io/badge/TRUTH-ENGINE-0A0A0A?style=for-the-badge" alt="Truth engine">
+  <img src="https://img.shields.io/badge/CONTEXT-COMPILER-7357FF?style=for-the-badge" alt="Context compiler">
+  <img src="https://img.shields.io/badge/POLICY-GATES-F0B429?style=for-the-badge" alt="Policy gates">
+  <img src="https://img.shields.io/badge/TEMPORAL-REPLAY-26A269?style=for-the-badge" alt="Temporal replay">
+</p>
+
+<p>
+  <img src="https://img.shields.io/badge/Next.js-16-000000?style=flat&logo=nextdotjs&logoColor=white" alt="Next.js 16">
+  <img src="https://img.shields.io/badge/Node.js-22-339933?style=flat&logo=nodedotjs&logoColor=white" alt="Node.js 22">
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript 5">
+  <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white" alt="PostgreSQL 16">
+  <img src="https://img.shields.io/badge/BUSL-1.1-555555?style=flat" alt="BUSL 1.1">
+  <img src="https://img.shields.io/badge/Source-Available-F0A000?style=flat" alt="Source available">
+</p>
+
+<p>
+  <a href="#product-film">Product film</a> ·
+  <a href="#product-surfaces">Product surfaces</a> ·
+  <a href="#complete-solution-packs">Solution packs</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#public-api-and-mcp">API &amp; MCP</a> ·
+  <a href="#run-locally">Quick start</a> ·
+  <a href="LICENSE">License</a>
+</p>
+
+</div>
+
+---
 
 ![Commonstate architecture — humans and agents acting from the same verified state](public/commonstate-architecture.png)
 
